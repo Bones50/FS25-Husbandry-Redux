@@ -1,8 +1,8 @@
--- Animal Redux -- this mod's own full-screen menu.
+-- Husbandry Redux -- this mod's own full-screen menu.
 --
 -- ONLY BUILT WHEN DISTRIBUTION REDUX IS ABSENT. With DR installed, AR registers its pages into DR's
 -- menu exactly as it always has (API.addMenuPage) and none of this loads, so a player running both
--- sees no change whatever. AnimalRedux.installStandaloneMenu is the single gate.
+-- sees no change whatever. HusbandryRedux.installStandaloneMenu is the single gate.
 --
 -- PORTED FROM DR's DistributionMenu, which is the shape this game wants a modded TabbedMenu to be:
 --   * extends TabbedMenu; the XML is chrome only and every page is a FrameReference
@@ -72,10 +72,10 @@ function AnimalMenu:setupPages()
           -- slice stays as the fallback: iconFile is applied only if the file resolves, so a
           -- build that somehow ships without it still shows a tab rather than a blank square.
           -- ABSOLUTE PATH -- GuiOverlay does no mod-relative resolution (DR 5.80).
-          iconFile = (AnimalRedux.MOD_DIR or "") .. "gui/icon_herdInspector.png" },
-        { page = AnimalRedux ~= nil and AnimalRedux._settingsPage or nil,
+          iconFile = (HusbandryRedux.MOD_DIR or "") .. "gui/icon_herdInspector.dds" },
+        { page = HusbandryRedux ~= nil and HusbandryRedux._settingsPage or nil,
           slot = self.pageSettings, icon = "gui.icon_options_generalSettings2", buttons = { back } },
-        { page = AnimalRedux ~= nil and AnimalRedux._helpPage or nil,
+        { page = HusbandryRedux ~= nil and HusbandryRedux._helpPage or nil,
           slot = self.pageHelp,     icon = "gui.icon_options_help2",           buttons = { back } },
     }
 
@@ -84,7 +84,7 @@ function AnimalMenu:setupPages()
     for _, d in ipairs(defs) do
         local page, slot = d.page, d.slot
         if page == nil then
-            print("[AnimalRedux] setupPages: a page instance is missing (its load failed?)")
+            print("[HusbandryRedux] setupPages: a page instance is missing (its load failed?)")
         else
             -- SWAP THE PLACEHOLDER FOR THE REAL FRAME. The <FrameReference> resolves to a plain
             -- GuiElement, NOT to the instance handed to loadGui -- measured, after the standalone
@@ -113,7 +113,7 @@ function AnimalMenu:setupPages()
                     okId = (id ~= nil) and (self.pagingElement:getPageById(id) ~= nil)
                 end
                 if not okId then
-                    print("[AnimalRedux] setupPages: the paging element did not accept a page")
+                    print("[HusbandryRedux] setupPages: the paging element did not accept a page")
                 end
             end
 
@@ -129,6 +129,21 @@ function AnimalMenu:setupPages()
             if d.iconFile ~= nil and fileExists ~= nil and fileExists(d.iconFile) then
                 self._tabIconFiles = self._tabIconFiles or {}
                 self._tabIconFiles[page] = d.iconFile
+                -- PUT THE FILE ON THE TAB RECORD TOO. The inherited populate re-applies the icon
+                -- from this record on every populate; while it still named the atlas slice, each
+                -- populate swapped the slice back in and ours swapped the PNG back, so the
+                -- filename changed every time and the PNG was reloaded from disk on each one
+                -- (GuiOverlay.createOverlay only skips an UNCHANGED filename). With both naming the
+                -- same file the reload is skipped. DR 6.44.
+                local tab = (self.pageTabs or {})[page]
+                if tab ~= nil then
+                    tab.iconSliceId  = nil
+                    tab.iconFilename = d.iconFile
+                    if Overlay ~= nil and Overlay.DEFAULT_UVS ~= nil then
+                        tab.iconUVs = (table.clone ~= nil) and table.clone(Overlay.DEFAULT_UVS)
+                                      or Overlay.DEFAULT_UVS
+                    end
+                end
             end
             self.tabIndexByPage[page] = n
             -- HerdInspectorPage.install already applied its real set (Back, Buy/Sell, Schedule and
@@ -200,6 +215,53 @@ function AnimalMenu:populateCellForItemInSection(list, section, index, cell)
             pcall(btn.setImageSlice, btn, nil, slice)
         end
     end
+end
+
+---Is a MEANINGFUL modifier held (ctrl / alt / shift / meta), as opposed to a lock bit?
+--
+-- MEASURED BY DR AND WORTH NOT RE-LEARNING: every menu key press arrives with
+-- modifier = 4096, a Num Lock bit, so a `modifier == 0` guard rejects EVERYTHING and the
+-- key silently never fires (DR 5.64, and it cost two builds there). The test has to be on
+-- the bits that matter.
+--
+-- The mask is assembled from whichever constants this build actually defines, and if none
+-- resolve it reports "clear" -- failing toward the key WORKING rather than silently dead.
+local function realModifierHeld(modifier)
+    if type(modifier) ~= "number" or bit32 == nil or Input == nil then return false end
+    local mask = 0
+    for _, n in ipairs({ "MOD_LCTRL", "MOD_RCTRL", "MOD_LALT", "MOD_RALT",
+                         "MOD_LSHIFT", "MOD_RSHIFT", "MOD_LMETA", "MOD_RMETA" }) do
+        local v = Input[n]
+        if type(v) == "number" then mask = bit32.bor(mask, v) end
+    end
+    if mask == 0 then return false end
+    return bit32.band(modifier, mask) ~= 0
+end
+
+---A AND D STEP THE CURRENT PAGE'S TABS, exactly as they do in Distribution Redux's menu.
+--
+-- THE SAME CONTRACT, so a page behaves identically in either menu: the page is asked,
+-- duck-typed, for stepPageTabBy(delta), and the key is claimed only if a tab actually moved.
+-- Without this the keys would work on the Herd Inspector inside DR's menu and do nothing on
+-- the same page in AR's own, which is the kind of split that makes a shared page feel broken.
+--
+-- HANDLED AT THE MENU, not the page: Gui:keyEvent dispatches to g_gui.currentListener and its
+-- target only and never walks down to a frame, so an override on a PAGE is not reliably
+-- reached (DR 5.64). This screen IS the currentListener.
+function AnimalMenu:keyEvent(unicode, sym, modifier, isDown, eventUsed)
+    local step = nil
+    if isDown and Input ~= nil and not realModifierHeld(modifier) then
+        if Input.KEY_a ~= nil and sym == Input.KEY_a then step = -1
+        elseif Input.KEY_d ~= nil and sym == Input.KEY_d then step = 1 end
+    end
+    if step ~= nil then
+        local p = self.currentPage
+        if p ~= nil and type(p.stepPageTabBy) == "function" then
+            local ok, moved = pcall(p.stepPageTabBy, p, step)
+            if ok and moved == true then return true end
+        end
+    end
+    return AnimalMenu:superClass().keyEvent(self, unicode, sym, modifier, isDown, eventUsed)
 end
 
 function AnimalMenu:onClickBack()

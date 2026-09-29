@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalEconomics.lua  (Animal Redux)
+-- AnimalEconomics.lua  (Husbandry Redux)
 --
 -- WHAT AN ANIMAL IS WORTH KEEPING. Selling a laying hen or a milking cow forfeits
 -- a STREAM of income, so the decision is an investment comparison and not a price
@@ -284,12 +284,33 @@ end
 -- consumed whatever the barn produces, which is what makes a starving barn a NET
 -- COST rather than merely a zero.
 ---Returns { total, byFillType = { [ft] = { litres, cost } }, unpriced } or nil.
-function AnimalEconomics.declaredInputCostPerMonth(subType, ageMonths)
+---`placeable` is OPTIONAL and only decides whether WATER is billed. Without it
+-- water is FREE, which is the right default for a PER-ANIMAL figure: the question
+-- "what does one cow cost" has no barn attached, and water is unsellable so its
+-- opportunity cost is zero either way. Pass the barn where the automatic-supply
+-- debit matters, and this agrees with declaredInputCostPerHour by construction
+-- rather than by a second model.
+function AnimalEconomics.declaredInputCostPerMonth(subType, ageMonths, placeable)
     if type(subType) ~= "table" then return nil end
     local days = AnimalEconomics.daysPerMonth()
     local out = { total = 0, byFillType = {}, unpriced = 0 }
+    local waterAuto = false
+    if placeable ~= nil then
+        local ws = placeable.spec_husbandryWater
+        waterAuto = (ws ~= nil and ws.automaticWaterSupply == true)
+    end
     for _, r in ipairs(AnimalEconomics.declaredInputRates(subType, ageMonths)) do
-        local price = AnimalEconomics.pricePerLitre(r.fillType)
+        local price
+        if r.key == "water" then
+            if waterAuto then
+                price = AnimalEconomics.basePricePerLitre(r.fillType)
+                if price == nil then price = AnimalEconomics.pricePerLitre(r.fillType) end
+            else
+                price = 0        -- free: unsellable, and drawn at no cost
+            end
+        else
+            price = AnimalEconomics.pricePerLitre(r.fillType)
+        end
         local litres = r.perDay * days
         -- `ft or key` as the index, never a bare ft: a nil table index is a hard
         -- throw, and from a GUI populate that aborts the page mid-render and shows
@@ -407,9 +428,52 @@ function AnimalEconomics.declaredInputCostPerHour(p, rows)
         -- number the player is not actually being charged. Every other input here
         -- is bought at a trigger, and FillTrigger uses the economy price, which is
         -- why that stays the default.
+        --
+        -- WATER IS FREE UNLESS THE GAME IS ACTUALLY BILLING FOR IT.
+        --
+        -- Author's ruling 2026-09-10: water cannot be sold -- maps_fillTypes.xml
+        -- declares WATER `showOnPriceTable="false"` -- and it is drawn from a
+        -- source that costs nothing, so its OPPORTUNITY COST IS ZERO and pricing
+        -- it at the economy rate charged the barn for something the player could
+        -- never have realised. That is the cash-vs-economic confusion this module
+        -- already carries a note about, and water is the one input where the
+        -- economic price is unambiguously wrong.
+        --
+        -- THE ONE EXCEPTION IS REAL CASH, NOT AN OPPORTUNITY COST. With
+        -- `automaticWaterSupply` the base game DEBITS THE BALANCE outright
+        -- (PlaceableHusbandryWater:updateFeeding -> addMoney(-price, ...,
+        -- MoneyType.PURCHASE_WATER)), and it has its own finance category, so the
+        -- player can see it. Dropping that would make this profit figure disagree
+        -- with the bank, which is the opposite of the fix being asked for. It is
+        -- also NOT a small number: a cow drinks 140 L/day at 0.1/L, so 96 cows on
+        -- automatic supply are billed ~1,344 a day against a hay bill of ~5,300.
+        --
+        -- Note `onLoad` FORCES automaticWaterSupply on for any husbandry that does
+        -- not support WATER as a fill type, so the billed case is common, not an
+        -- edge. A barn with a real water tank pays nothing.
         local price = nil
-        if auto then price = AnimalEconomics.basePricePerLitre(a.fillType) end
-        if price == nil then price = AnimalEconomics.pricePerLitre(a.fillType) end
+        if a.key == "water" then
+            -- 0, NOT nil. nil means "cannot be priced" and would flag the barn's
+            -- total as unknown; this is a known and exact ZERO (5.46c -- in this
+            -- codebase 0 is a real value and must never be conflated with absent).
+            -- if/else, never `auto and price or 0`: that collapsing form is what
+            -- 5.44 and 5.46c both record being bitten by, and writing it directly
+            -- under a comment about 0-vs-nil would be asking for it.
+            if auto then
+                -- BILLED. Prefer the game's own formula; fall back to the economy
+                -- price; and if neither resolves leave it NIL so the barn reports
+                -- an unknown total. NOT 0 -- the player is being charged something
+                -- we merely cannot quantify, and zero would be the silently
+                -- flattering error this module's own fail-direction note warns of.
+                price = AnimalEconomics.basePricePerLitre(a.fillType)
+                if price == nil then price = AnimalEconomics.pricePerLitre(a.fillType) end
+            else
+                price = 0          -- free: unsellable, drawn at no cost
+            end
+        else
+            if auto then price = AnimalEconomics.basePricePerLitre(a.fillType) end
+            if price == nil then price = AnimalEconomics.pricePerLitre(a.fillType) end
+        end
         local cost = nil
         if price ~= nil then
             cost = consumed * price
@@ -540,6 +604,125 @@ function AnimalEconomics.feedCostPerHour(p, model, avail, demand)
                 -- market price -- a term worth zero litres cannot make a total
                 -- unknown. The per-product `cost` is still nil either way, which is
                 -- what the inputs column reads.
+                out.unpriced = out.unpriced + 1
+            end
+        end
+    end
+
+    -- ---- FEEDING ROBOT: CHARGE THE INGREDIENTS, NOT THE MIX ------------------
+    --
+    -- Reported 2026-09-09. A robot barn mixes silage, straw, hay and mineral feed
+    -- from its own bunkers into TMR and puts only the TMR in the trough -- so the
+    -- loop above, which reads the trough, charged the ENTIRE ration against a
+    -- product the farm has never bought a litre of, while the four it actually
+    -- bought contributed nothing. Mineral feed did not appear anywhere at all: it
+    -- is in no cow food group and no declared subtype input, so no row could exist
+    -- for it on any table, and at 1.20/L against silage at 0.121 it is by far the
+    -- most expensive thing in the mix.
+    --
+    -- THE MIX IS NOT FREE, IT IS ALREADY PAID FOR -- one step earlier, as
+    -- ingredients. So its cost moves rather than vanishing, and the total stays
+    -- honest. What changes is WHERE it lands, which is what makes the inputs table
+    -- describe money the farm actually spends.
+    --
+    -- RATES COME OFF WHAT WAS EATEN, not off demand: the robot mixes what the herd
+    -- consumes, so a barn eating half its demand is buying half the ingredients.
+    -- That also keeps this column meaning what COST NOW means everywhere else.
+    local mixedFt = (AnimalFeedModel ~= nil and AnimalFeedModel.mixedFillTypeOf ~= nil)
+        and AnimalFeedModel.mixedFillTypeOf(p) or nil
+    local mixEntry = mixedFt ~= nil and out.byFillType[mixedFt] or nil
+    if mixEntry ~= nil then
+        local mixedEaten = mixEntry.eaten or 0
+        if mixEntry.cost ~= nil then out.perHour = out.perHour - mixEntry.cost end
+        mixEntry.cost = 0                     -- produced here; the ingredients carry it
+        mixEntry.produced = true              -- the PRODUCED table reads this
+        out.producedFillType = mixedFt
+
+        -- ASK THE RECIPE, NOT THE RATES. Empty rates have TWO causes and only one of
+        -- them is an unknown: the recipe genuinely would not read, or the barn simply
+        -- is not eating (an empty pool between mixes, or no animals). Testing the
+        -- rates conflated them, and because HusbandryRedux.lua blanks the ENTIRE profit
+        -- block on any unpriced term, a robot barn caught between batches reported no
+        -- profit at all. Reported 2026-09-09, straight after the first build.
+        --
+        -- A barn eating nothing has a perfectly well known feed cost, and it is ZERO.
+        -- Only an unreadable recipe is an unknown, and only that raises the flag.
+        local rec = (AnimalFeedModel.robotRecipeOf ~= nil)
+            and AnimalFeedModel.robotRecipeOf(p) or nil
+        local rates = {}
+        if rec == nil then
+            out.recipeUnreadable = true
+            out.unpriced = out.unpriced + 1
+        elseif mixedEaten > 0 and AnimalFeedModel.robotIngredientRates ~= nil then
+            rates = AnimalFeedModel.robotIngredientRates(p, mixedEaten)
+        end
+        for ft, litres in pairs(rates) do
+            local price = AnimalEconomics.pricePerLitre(ft)
+            local e = out.byFillType[ft]
+            if e == nil then
+                e = { eaten = 0, charged = 0, cost = price ~= nil and 0 or nil }
+                out.byFillType[ft] = e
+            end
+            e.ingredient = true
+            e.eaten = (e.eaten or 0) + litres
+            e.charged = (e.charged or 0) + litres      -- a bunker is always delivered, never grazed
+            if price ~= nil then
+                e.cost = (e.cost or 0) + litres * price
+                out.perHour = out.perHour + litres * price
+            elseif litres > 0 then
+                out.unpriced = out.unpriced + 1
+            end
+        end
+    end
+
+    -- ---- COMPLETE RATIONS: CHARGE THE MIX, NOT THE CROPS IT BECAME ---------
+    --
+    -- 2026-09-14. Pig food is split into its crops the moment it reaches the
+    -- trough (AnimalFeedModel.MixLedger), so the loop above charged it as maize,
+    -- wheat, soybean and potato at CROP prices -- about a third of what the farm
+    -- paid. The ledger knows what share of each crop came from a mixture, so that
+    -- share of the charged litres moves from the crop to the mixture, at the
+    -- mixture's price. The robot pass above is the same move in the other
+    -- direction: there the mix was charged and the ingredients were bought.
+    --
+    -- Only CHARGED litres move: a mixture is always a delivery, never grazing, and
+    -- the shares are shares of the trough.
+    local ML = AnimalFeedModel ~= nil and AnimalFeedModel.MixLedger or nil
+    if ML ~= nil and ML.sharesOf ~= nil then
+        local mixes = {}
+        for ft, e in pairs(out.byFillType) do
+            local shares = ML.sharesOf(p, ft)
+            for mixFt, s in pairs(shares) do
+                local part = (e.charged or 0) * s
+                if part > 0 then
+                    local cropPrice = AnimalEconomics.pricePerLitre(ft)
+                    if cropPrice ~= nil and e.cost ~= nil then
+                        e.cost = e.cost - part * cropPrice
+                        out.perHour = out.perHour - part * cropPrice
+                    end
+                    e.fromMix = (e.fromMix or 0) + part
+                    local m = mixes[mixFt]
+                    if m == nil then m = { litres = 0, byIngredient = {} }; mixes[mixFt] = m end
+                    m.litres = m.litres + part
+                    m.byIngredient[ft] = (m.byIngredient[ft] or 0) + part
+                end
+            end
+        end
+        for mixFt, m in pairs(mixes) do
+            local price = AnimalEconomics.pricePerLitre(mixFt)
+            local e = out.byFillType[mixFt]
+            if e == nil then
+                e = { eaten = 0, charged = 0, cost = price ~= nil and 0 or nil }
+                out.byFillType[mixFt] = e
+            end
+            e.mixture = true
+            e.eaten = (e.eaten or 0) + m.litres
+            e.charged = (e.charged or 0) + m.litres
+            e.ingredients = m.byIngredient
+            if price ~= nil then
+                e.cost = (e.cost or 0) + m.litres * price
+                out.perHour = out.perHour + m.litres * price
+            else
                 out.unpriced = out.unpriced + 1
             end
         end
@@ -810,7 +993,7 @@ function AnimalEconomics.summarise(rows)
                   -- is two chances to weight them differently.
                   gross = 0, knownGross = 0,
                   breeders = 0, knownBirths = 0,
-                  births = 0, birthValue = 0, birthValueLost = 0,
+                  births = 0, birthValue = 0, birthValueLost = 0, birthsLost = 0,
                   capital = 0 }
     local sawGross, sawBirth = false, false
     for _, e in ipairs(rows or {}) do
@@ -850,6 +1033,9 @@ function AnimalEconomics.summarise(rows)
                 out.birthValue = out.birthValue + perMonth * e.birthValue
                 local lost = (e.lostIfFull or 0) / e.cycleMonths
                 out.birthValueLost = out.birthValueLost + lost * e.birthValue
+                -- THE COUNT, not just the value: it is the size of the cull that would
+                -- make room for them, and therefore what the sale FEE is charged on.
+                out.birthsLost = (out.birthsLost or 0) + lost
                 sawBirth = true
             end
         end
@@ -908,6 +1094,15 @@ end
 -- it does not have a free one. Both are passed IN rather than read off `sum`,
 -- because both are properties of the BUILDING (what it is holding) and not of the
 -- clusters standing in it.
+---What it costs to REALISE an animal, over and above losing the animal.
+--
+-- MEASURED IN GAME (13.5) and confirmed by scaling rather than assumed from one
+-- point: a flat 100 PER ANIMAL, not a percentage -- at the price sampled, a
+-- percentage would have been indistinguishable from 16.54%, which is exactly why
+-- it was checked at 1, 2 and 7 head. `cluster:getSellPrice()` is GROSS, so every
+-- projected revenue is over-stated by this much until it is taken off.
+AnimalEconomics.SALE_FEE_PER_ANIMAL = 100
+
 ---Returns { perMonth, outputs, inputs, ageing, births, birthValueLost, complete }
 -- or nil when there is nothing to report.
 function AnimalEconomics.barnProfit(sum, feedPerMonth, declaredPerMonth)
@@ -931,11 +1126,43 @@ function AnimalEconomics.barnProfit(sum, feedPerMonth, declaredPerMonth)
                      and (sum.knownDrift or 0) >= (sum.animals or 0)
                      and (sum.knownBirths or 0) >= (sum.breeders or 0)
 
-    local total = nil
-    if complete then total = outputs - inputs + ageing + births end
+    -- ---- TWO FIGURES, AND THE POINT IS THAT THEY CONVERGE --------------------
+    --
+    -- Author's design, 2026-09-09. The barn was reporting ONE number and it was the
+    -- optimistic one: births counted GROSS while a full pen destroys every calf
+    -- (11.5 -- and it destroys the gestation that made them too, silently). On a
+    -- 96/96 barn of Angus that is 9.6 calves a month at 230, so the headline was
+    -- 2,208/month better than reality and said nothing about the fact.
+    --
+    --   CURRENT      what this barn earns if you change nothing. Births NET of what
+    --                the pen destroys -- zero while it is full.
+    --   PROSPECTIVE  what it earns if you keep room for them. Births GROSS, less the
+    --                sale fee on the animals sold to make that room.
+    --
+    -- THEY MEET WHEN THE ACTION IS TAKEN, and that is the property worth having: the
+    -- fee is charged on exactly the births that would otherwise die, so making room
+    -- drives birthValueLost to zero and the fee to zero IN THE SAME STEP. Sell enough
+    -- and the two figures become equal -- not approximately, identically. A harness
+    -- pins that, because a convergence that holds by luck is worth nothing.
+    --
+    -- NEITHER IS A CASH FIGURE. Feed is charged at market value, so both answer
+    -- "does this herd beat selling the feed", not "what did my balance do" -- a farm
+    -- growing its own silage can read negative here and still be making money. That
+    -- distinction is the label's job, not this function's.
+    local birthsNet = nil
+    if births ~= nil then birthsNet = births - (sum.birthValueLost or 0) end
+    local cullFee = (sum.birthsLost or 0) * AnimalEconomics.SALE_FEE_PER_ANIMAL
 
-    return { perMonth = total, outputs = outputs, inputs = inputs,
+    local total, prospective = nil, nil
+    if complete then
+        total       = outputs - inputs + ageing + (birthsNet or 0)
+        prospective = outputs - inputs + ageing + (births or 0) - cullFee
+    end
+
+    return { perMonth = total, perMonthProspective = prospective,
+             outputs = outputs, inputs = inputs,
              feed = feedPerMonth, declaredInput = declared,
-             ageing = ageing, births = births,
+             ageing = ageing, births = birthsNet, birthsGross = births,
+             cullFee = cullFee, birthsLost = sum.birthsLost,
              birthValueLost = sum.birthValueLost, complete = complete }
 end

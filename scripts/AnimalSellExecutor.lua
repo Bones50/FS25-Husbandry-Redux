@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalSellExecutor.lua  (Animal Redux)
+-- AnimalSellExecutor.lua  (Husbandry Redux)
 --
 -- LAYER 3 OF THREE. AnimalSellRules decides WHAT to sell and returns a plan;
 -- this carries the plan out. It owns no policy: hand it a plan and it sells
@@ -32,8 +32,8 @@ AnimalSellExecutor.CALLBACKS = {
 }
 
 local function log(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.warn ~= nil then
-        AnimalRedux.warn(fmt, ...)
+    if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then
+        HusbandryRedux.warn(fmt, ...)
     else
         local ok, m = pcall(string.format, fmt, ...)
         print("[AnimalSellExecutor] " .. (ok and m or tostring(fmt)))

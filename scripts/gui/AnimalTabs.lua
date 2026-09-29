@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalTabs.lua  (Animal Redux) -- a horizontal tab strip, ONE implementation.
+-- AnimalTabs.lua  (Husbandry Redux) -- a horizontal tab strip, ONE implementation.
 --
 -- Requested 2026-09-01: switch between pages with tabs across the top, the way
 -- the base game's settings screen does, rather than with a selector.
@@ -59,7 +59,8 @@ AnimalTabs = {}
 ---How many tab slots the layouts declare. Every surface declares this many and
 -- hides the ones it does not use, so nothing is ever repositioned at runtime
 -- (DR 5.37).
-AnimalTabs.MAX = 3
+AnimalTabs.MAX = 8   -- 8 since the Herd Inspector gained a tab per animal type (2026-09-24);
+                     -- the render is nil-guarded per slot, so a surface declaring fewer is unaffected
 
 ---Set an element's selected state, if it has one.
 --
@@ -112,6 +113,26 @@ function AnimalTabs.render(owner, labels, active)
             shown = shown + 1
             if btn.setText ~= nil then btn:setText(tostring(label)) end
         end
+    end
+
+    -- THE A / D HINTS, where the surface declares them. Optional: the two dialogs share this
+    -- renderer and have no arrows, so both are nil-guarded and nothing changes for them.
+    -- Shown only when there is somewhere to step -- a single tab cannot be cycled.
+    --
+    -- THE LETTERS ARE NOT TRANSLATED. They name a hardcoded key, so translating them would
+    -- promise a rebinding that does not exist (DR 5.100).
+    --
+    -- POSITION IS STATIC, unlike DR's, because every surface that has these arrows draws a FIXED
+    -- number of tabs. Give one a variable count and the next arrow will need placing against the
+    -- last visible slot, the way DR's drawPageTabs does it.
+    local prev, nxt = owner.arTabPrev, owner.arTabNext
+    if prev ~= nil then
+        if prev.setText ~= nil then prev:setText("< A") end
+        if prev.setVisible ~= nil then prev:setVisible(shown > 1) end
+    end
+    if nxt ~= nil then
+        if nxt.setText ~= nil then nxt:setText("D >") end
+        if nxt.setVisible ~= nil then nxt:setVisible(shown > 1) end
     end
     return shown
 end

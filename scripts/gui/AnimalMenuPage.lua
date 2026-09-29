@@ -1,8 +1,8 @@
--- Animal Redux -- the base class every page of AR's own menu extends.
+-- Husbandry Redux -- the base class every page of AR's own menu extends.
 --
 -- ONLY USED WHEN DISTRIBUTION REDUX IS ABSENT. With DR installed, HerdInspectorPage extends DR's
 -- DistributionMenuPage exactly as it always has, so a player running both mods gets bit-for-bit the
--- behaviour they have now. AnimalRedux picks the base at install time; this is the fallback half.
+-- behaviour they have now. HusbandryRedux picks the base at install time; this is the fallback half.
 --
 -- A SLIM PORT, NOT A COPY. DR's DistributionMenuPage is 279 lines and roughly a third of it is the
 -- Hour/Month/Year period selector and windowStats, which read DR's OWN LEDGERS -- there is nothing
@@ -160,3 +160,6 @@ function AnimalMenuPage:update(dt)
         end
     end
 end
+
+-- FULL TEXT ON HOVER for any cell the layout cut short (TextTip.lua, 2026-09-29).
+if TextTip ~= nil and TextTip.install ~= nil then TextTip.install(AnimalMenuPage) end

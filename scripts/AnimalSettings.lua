@@ -1,7 +1,7 @@
 -- ============================================================================
--- AnimalSettings.lua  (Animal Redux)
+-- AnimalSettings.lua  (Husbandry Redux)
 --
--- Animal Redux's own settings, shown as a TAB on Distribution Redux's Settings
+-- Husbandry Redux's own settings, shown as a TAB on Distribution Redux's Settings
 -- page.
 --
 -- DR OWNS THE LAYOUT, THIS FILE OWNS THE DATA -- the same split the husbandry
@@ -11,7 +11,7 @@
 -- is measured to the pixel safe from us.
 --
 -- THE TAB EXISTS ONLY WHILE THIS MOD DOES. DR declares no AR tab: it is
--- registered from here at mission load, so a player who removes Animal Redux sees
+-- registered from here at mission load, so a player who removes Husbandry Redux sees
 -- DR's settings page exactly as it was, with one tab. That is the "if AR is not
 -- installed that page should not be there" requirement, satisfied by construction
 -- rather than by a check.
@@ -42,23 +42,23 @@
 
 AnimalSettings = {}
 
-AnimalSettings.MOD_NAME = "FS25_Animal_Redux"
+AnimalSettings.MOD_NAME = "FS25_Husbandry_Redux"
 
 local function l10n(key, fallback)
-    if AnimalRedux ~= nil and AnimalRedux.l10n ~= nil then return AnimalRedux.l10n(key, fallback) end
+    if HusbandryRedux ~= nil and HusbandryRedux.l10n ~= nil then return HusbandryRedux.l10n(key, fallback) end
     return fallback
 end
 
 local function warn(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.warn ~= nil then return AnimalRedux.warn(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then return HusbandryRedux.warn(fmt, ...) end
     local ok, msg = pcall(string.format, fmt, ...)
-    print("[AnimalRedux] " .. (ok and msg or tostring(fmt)))
+    print("[HusbandryRedux] " .. (ok and msg or tostring(fmt)))
 end
 
 ---Progress, not failure. Gated on the Debug setting so a normal session's log
 -- carries only what went wrong (AnimalSettings, the "debug" row).
 local function dbg(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.log ~= nil then return AnimalRedux.log(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.log ~= nil then return HusbandryRedux.log(fmt, ...) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -81,25 +81,27 @@ AnimalSettings.DEFS = {
         strings = { "ar_set_off", "ar_set_on" },
     },
     autoTrader = {
-        -- DEFAULT OFF, 2026-09-04, author: *"I am still working on it, we will
-        -- reactivate later once we have autotrader working correctly."* A feature
-        -- that is not finished should not be running on a farm by default.
+        -- DEFAULT ON AGAIN, 2026-09-10, author's call: the standing orders are
+        -- finished, and 39/39a took the last of the unbuilt surface off the page
+        -- (sell orders no longer consult rules, and the two RULES buttons are
+        -- gone), so the feature a new save gets is the whole feature.
         --
-        -- THIS CHANGED THE ANSWER FOR EXISTING SAVES TOO, not just new ones, and
-        -- that had to be made safe before flipping it: a save carries a stored
-        -- value only if it was saved SINCE the settings existed, so every save
-        -- older than today adopts the new default. Both of the author's saves hold
-        -- a buy schedule, so those orders became dormant AND unreachable -- and
-        -- until this flip nothing gated the RUNNER, so they would have gone on
-        -- spending money on the hour with no button to reach them. runDue is now
-        -- gated (AnimalBuySchedule), which makes the off state honest.
+        -- IT WAS OFF from 2026-09-04, when the author asked for it while the auto
+        -- trader was still being built: *"I am still working on it, we will
+        -- reactivate later once we have autotrader working correctly."* This is
+        -- that reactivation.
         --
-        -- NOTHING IS DELETED BY ADOPTING THE DEFAULT. loadSection applies values
-        -- silently, so the orders are preserved and dormant; switching the setting
-        -- back on restores them intact. Deletion only ever happens through the
-        -- confirmation, on an explicit change by the player.
+        -- IT REACHES SOME EXISTING SAVES AS WELL AS NEW ONES, and that is worth
+        -- knowing rather than a surprise: a save carries a stored value only if it
+        -- was written SINCE the settings existed, so anything older adopts the new
+        -- default and comes back with the auto trader ON. That direction is the
+        -- safe one -- it RESTORES dormant orders rather than deleting anything.
+        --
+        -- NOTHING IS DELETED BY ADOPTING A DEFAULT in either direction. loadSection
+        -- applies values silently, so orders are preserved; deletion only ever
+        -- happens through the confirmation, on an explicit change by the player.
         values  = { false, true },
-        default = 1,
+        default = 2,
         title   = "ar_set_autoTrader",
         tooltip = "ar_set_autoTrader_tt",
         strings = { "ar_set_off", "ar_set_on" },
@@ -165,7 +167,7 @@ AnimalSettings.DEFS = {
 -- theoretical: `requestPassProfiler` shipped on 2026-09-07, while `registerSettingsTab` shipped in
 -- DR 1.1.0.1. So a player running the older DR with today's AR HAS a settings page, sees the
 -- Performance logging row, and nothing at all would happen when they moved it. Testing
--- `AnimalRedux.DR ~= nil` would call that combination supported. Testing for the function itself
+-- `HusbandryRedux.DR ~= nil` would call that combination supported. Testing for the function itself
 -- is the only answer that stays true as either mod moves.
 --
 -- THE STORED VALUE IS NEVER REWRITTEN. An unavailable setting is DISABLED, not reset: the player's
@@ -369,7 +371,7 @@ function AnimalSettings.onChanged(id, value, previousIndex)
 
     elseif id == "debug" then
         -- The only setting that takes effect on the spot and needs nothing else.
-        if AnimalRedux ~= nil then AnimalRedux.debug = (value == true) end
+        if HusbandryRedux ~= nil then HusbandryRedux.debug = (value == true) end
         warn("debug logging %s", value and "ON" or "OFF")
 
     elseif id == "trading" then
@@ -377,7 +379,7 @@ function AnimalSettings.onChanged(id, value, previousIndex)
         warn("manual Buy / Sell %s", value and "ON" or "OFF")
 
     elseif id == "herdAdviser" then
-        -- The panel lines need no push: AnimalRedux.husbandryPanel simply stops
+        -- The panel lines need no push: HusbandryRedux.husbandryPanel simply stops
         -- filling them and DR blanks the text on the next draw. The Animals tab's
         -- RECOMMENDATION column is a COLUMN and has to be shown or hidden, which
         -- is a view decision, so the page is asked to re-apply it.
@@ -437,7 +439,7 @@ end
 -- (the confirmation dialog answers later, so DR's own re-read has already run by
 -- then and would still show the un-answered value).
 function AnimalSettings.refreshPage()
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     if SD == nil then return end
     if SD.refreshSettingsRows ~= nil then pcall(SD.refreshSettingsRows) end
 end
@@ -534,7 +536,7 @@ local function loadSection(xml, key)
     end
     -- Applied AFTER the whole section is read, so a half-read file cannot leave
     -- the debug flag half-applied.
-    if AnimalRedux ~= nil then AnimalRedux.debug = AnimalSettings.debugEnabled() end
+    if HusbandryRedux ~= nil then HusbandryRedux.debug = AnimalSettings.debugEnabled() end
     -- ...and the same for the profiler request. The loader is SILENT, so onChanged never fires and
     -- nothing would otherwise carry a restored value across to DR -- the row would read "Every pass"
     -- while DR logged nothing, which is precisely the shape of bug that looks like the setting being
@@ -549,7 +551,7 @@ if AnimalPersist ~= nil and AnimalPersist.register ~= nil then
 end
 
 -- ---------------------------------------------------------------------------
----Register the tab on DR's settings page. Called from AnimalRedux's mission-load
+---Register the tab on DR's settings page. Called from HusbandryRedux's mission-load
 -- hook, once DR has been resolved.
 --
 -- GATED ON THE CALL EXISTING, not on a version number, so a DR that gains this in
@@ -584,7 +586,7 @@ function AnimalSettings.install(SD)
         return false
     end
     local ok, res = pcall(SD.API.registerSettingsTab, AnimalSettings.MOD_NAME,
-                          l10n("ar_set_tab", "ANIMAL REDUX"), AnimalSettings.rows)
+                          l10n("ar_set_tab", "HUSBANDRY REDUX"), AnimalSettings.rows)
     if ok and res then
         warn("settings tab added to the Distribution Redux settings page")
         return true

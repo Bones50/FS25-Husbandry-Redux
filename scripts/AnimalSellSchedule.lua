@@ -32,9 +32,12 @@
 -- same rule set rather than a separate barn-level thing, so everything governing
 -- one order is in one place and visible on one screen.
 --
--- NOTHING SELLS BY ITSELF YET: `AnimalSellPolicy.isAutoLive()` gates this too.
--- The executor has never sold an animal on a timer, so an order is stored,
--- listed and counted down, and only "Sell now" moves anything. One flag.
+-- AN ORDER SELLS ON ITS SCHEDULE (author, 2026-09-14): *"If a sell order is created
+-- it IS automatic selling, on a schedule."* The only two ways animals leave are Sell
+-- (now) and the Auto Trader (a buy or sell order, fulfilled when due). runDue below is
+-- driven EVERY HOUR from AnimalBuySchedule:onHourChanged, so a due order sells within
+-- the hour and ahead of the births at the start of the next month, and stands down
+-- with the Auto Trader setting, exactly as the buy side does.
 -- ============================================================================
 
 AnimalSellSchedule = {}
@@ -47,15 +50,15 @@ AnimalSellSchedule.orders = {}
 AnimalSellSchedule._nextId = 1
 
 local function warn(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.warn ~= nil then return AnimalRedux.warn(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then return HusbandryRedux.warn(fmt, ...) end
     local ok, msg = pcall(string.format, fmt, ...)
-    print("[AnimalRedux] " .. (ok and msg or tostring(fmt)))
+    print("[HusbandryRedux] " .. (ok and msg or tostring(fmt)))
 end
 
 ---Progress, not failure. Gated on the Debug setting so a normal session's log
 -- carries only what went wrong (AnimalSettings, the "debug" row).
 local function dbg(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.log ~= nil then return AnimalRedux.log(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.log ~= nil then return HusbandryRedux.log(fmt, ...) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -232,17 +235,42 @@ end
 -- the order down and the breeder floor caps it, without this module restating
 -- either -- `plan` already applies both.
 ---Returns plan, note. `note` is non-nil when the order was trimmed or refused.
+---AN ORDER IS THE INSTRUCTION. Nothing else is consulted.
+--
+-- Author, 2026-09-10: *"no other sell order settings to impact the sale at all
+-- other than the age ordering. So should be disconnected completely."*
+--
+-- THE RULES ENGINE IS NO LONGER ON THIS PATH. It emits lines for four REASONS
+-- (calf / headroom / peak / earnings) rather than filtering a candidate list, so
+-- with no reason firing it returned nothing however the settings were set -- an
+-- order for 20 sold 0, and no combination of switches could fix it because none
+-- of them was the cause. `orderPlan` takes the count in rank order instead.
+--
+-- `s.cfg` is DELIBERATELY IGNORED rather than deleted: existing saved orders
+-- carry one, and dropping the field would make this version unable to read them.
+-- It is dead weight, not a dependency.
 function AnimalSellSchedule.buildPlan(p, s)
-    if p == nil or s == nil or AnimalSellPolicy == nil then return nil, "no rules engine" end
+    if p == nil or s == nil or AnimalSellRules == nil
+       or AnimalSellRules.orderPlan == nil then return nil, "no sell engine" end
 
-    local full, err = AnimalSellPolicy.planFor(p, s.cfg)
-    if full == nil then return nil, err or "the rules could not be run" end
-    if #(full.lines or {}) == 0 then
-        return nil, "the rules would sell nothing right now"
+    local priceFn = nil
+    if AnimalSellExecutor ~= nil and AnimalSellExecutor.priceFn ~= nil then
+        local okF, fn = pcall(AnimalSellExecutor.priceFn, p)
+        if okF then priceFn = fn end
     end
 
-    local plan = AnimalSellPolicy.capPlan(full, s.count)
-    if plan == nil or plan.total == 0 then return nil, "nothing to sell" end
+    local okP, plan = pcall(AnimalSellRules.orderPlan, p, s.count, priceFn)
+    if not okP or type(plan) ~= "table" then return nil, "the sale could not be planned" end
+    if plan.total == 0 then
+        -- A REAL DISTINCTION, and the screen needs both: an empty barn is not the
+        -- same as a barn whose every animal would sell at a loss.
+        for _, n in ipairs(plan.notes or {}) do
+            if n.kind == "refused" then
+                return nil, "every animal would sell for less than the dealer fee"
+            end
+        end
+        return nil, "this barn has no animals to sell"
+    end
 
     local note = nil
     if plan.total < s.count then
@@ -252,17 +280,15 @@ function AnimalSellSchedule.buildPlan(p, s)
 end
 
 ---Run one order now. Returns sold, revenue, note.
----GATED THOUGH NOTHING CALLS IT YET. There is no sell driver at all (29.15c:
--- no runDue, no install, no subscriber), so this has zero callers today -- and
--- that is exactly why the gate goes on the UNIT OF WORK rather than on the
--- driver: whoever builds the clock inherits it instead of having to remember it.
+-- Gated on the Auto Trader setting HERE, on the unit of work, so every caller
+-- inherits it.
 function AnimalSellSchedule.runOne(s)
     if AnimalSettings ~= nil and not AnimalSettings.autoTraderEnabled() then return 0, 0, "the auto trader is switched off" end
     if AnimalSellExecutor == nil or AnimalSellExecutor.canRun == nil
        or not AnimalSellExecutor.canRun() then
         return 0, 0, "cannot sell here"
     end
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     local p = (SD ~= nil and SD.placeableByUid ~= nil) and SD.placeableByUid(s.uid) or nil
     if p == nil then return 0, 0, "barn not found" end
 
@@ -278,6 +304,43 @@ function AnimalSellSchedule.runOne(s)
         return 0, 0, why or "nothing was sold"
     end
     return res.sold, res.revenue or 0, note
+end
+
+---THE DRIVER'S PASS: every order due this month, oldest-created first. The mirror of
+-- AnimalBuySchedule.runDue, and its rules: a run that sold NOTHING does not use up an
+-- occurrence and is retried at the next trigger with the reason logged; a completed
+-- order lingers a month and clears.
+function AnimalSellSchedule.runDue()
+    if AnimalSettings ~= nil and not AnimalSettings.autoTraderEnabled() then return 0 end
+    local month = AnimalSellSchedule.currentMonth()
+    if month == nil then
+        warn("sell orders idle: the environment does not report a day")
+        return 0
+    end
+    local ran = 0
+    for i = 1, #AnimalSellSchedule.orders do
+        local s = AnimalSellSchedule.orders[i]
+        if s ~= nil and AnimalSellSchedule.isDue(s, month) then
+            local sold, revenue, note = AnimalSellSchedule.runOne(s)
+            s.note = note or ""
+            if AnimalSellSchedule.recordRun(s, sold, revenue) then
+                ran = ran + 1
+                -- UNCONDITIONAL: animals left the farm without the player pressing anything
+                local runs = AnimalSellSchedule.totalRuns(s)
+                warn("sell order #%s: sold %d animal(s) from %s for %s (run %d/%s)%s",
+                     tostring(s.id), sold, tostring(s.barnName),
+                     tostring(math.floor((revenue or 0) + 0.5)), s.runsDone,
+                     runs == math.huge and "forever" or tostring(runs),
+                     note ~= nil and (" -- " .. note) or "")
+            elseif s.note ~= AnimalSellSchedule._lastNote then
+                -- a repeated blocker would otherwise print every game day
+                AnimalSellSchedule._lastNote = s.note
+                warn("sell order #%s sold nothing: %s", tostring(s.id), tostring(s.note))
+            end
+        end
+    end
+    AnimalSellSchedule.pruneFinished(month)
+    return ran
 end
 
 -- ---------------------------------------------------------------------------

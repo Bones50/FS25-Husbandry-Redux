@@ -1,4 +1,4 @@
--- Animal Redux -- the USER GUIDE page of this mod's own menu.
+-- Husbandry Redux -- the USER GUIDE page of this mod's own menu.
 --
 -- ONLY USED WHEN DISTRIBUTION REDUX IS ABSENT. With DR present the same topics are registered as a
 -- tab on DR's User Guide page (AnimalHelp.install), and this file is never loaded. The CONTENT is

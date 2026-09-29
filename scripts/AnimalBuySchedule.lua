@@ -106,12 +106,12 @@ AnimalBuySchedule._nextId   = 1
 AnimalBuySchedule._lastNote = nil
 
 local function warn(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.warn ~= nil then return AnimalRedux.warn(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then return HusbandryRedux.warn(fmt, ...) end
     local ok, msg = pcall(string.format, fmt, ...)
-    print("[AnimalRedux] " .. (ok and msg or tostring(fmt)))
+    print("[HusbandryRedux] " .. (ok and msg or tostring(fmt)))
 end
 local function dbg(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.log ~= nil then return AnimalRedux.log(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.log ~= nil then return HusbandryRedux.log(fmt, ...) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -509,6 +509,60 @@ function AnimalBuySchedule.subTypeNameOf(r)
     return nil
 end
 
+---THE EVIDENCE THAT A DEALER ROW IS ONE BREED (2026-09-13: the auto trader opened
+-- from a single breed's row).
+--
+-- A dealer row carries NO subtype index (23.2), so a breed cannot simply be
+-- looked up on it. This collects what the breed looks like -- its visuals and
+-- pictures at every age -- once, so rowIsBreed can compare each row cheaply.
+function AnimalBuySchedule.breedEvidence(breed)
+    local ev = { name = breed, visuals = {}, icons = {} }
+    if type(breed) ~= "string" or breed == "" or AnimalHerdData == nil then return ev end
+    local idx = nil
+    for i = 1, 200 do
+        local st = AnimalHerdData.subTypeOf(i)
+        if st ~= nil and st.name == breed then idx = i; break end
+    end
+    local asys = g_currentMission ~= nil and g_currentMission.animalSystem or nil
+    if idx == nil or asys == nil or asys.getVisualByAge == nil then return ev end
+    for age = 0, 120 do
+        local ok, v = pcall(asys.getVisualByAge, asys, idx, age)
+        if ok and type(v) == "table" and not ev.visuals[v] then
+            ev.visuals[v] = true
+            if AnimalHerdData.iconFromStore ~= nil then
+                local okF, f = pcall(AnimalHerdData.iconFromStore, v.store)
+                if okF and type(f) == "string" and f ~= "" then ev.icons[f] = true end
+            end
+        end
+    end
+    return ev
+end
+
+---IS THIS CATALOGUE ROW OF THE BREED `ev` DESCRIBES? Strongest evidence first:
+--   1. the row's subtype NAME, where subTypeNameOf resolved one -- authoritative,
+--      so a row naming a DIFFERENT breed is refused outright;
+--   2. its VISUAL, by identity with one of the breed's own;
+--   3. its PICTURE FILE, against the breed's pictures.
+function AnimalBuySchedule.rowIsBreed(c, ev)
+    if type(c) ~= "table" or type(ev) ~= "table" then return false end
+    if c.subType ~= nil then return c.subType == ev.name end
+    local r = c.row
+    if type(r) ~= "table" then return false end
+    local it = r.item
+    if type(it) == "table" then
+        -- appended, not a table constructor: a nil hole would stop ipairs early
+        local cands = {}
+        if type(it.visual) == "table" then cands[#cands + 1] = it.visual end
+        if type(it.animal) == "table" and type(it.animal.visual) == "table" then cands[#cands + 1] = it.animal.visual end
+        if type(it.cluster) == "table" and type(it.cluster.visual) == "table" then cands[#cands + 1] = it.cluster.visual end
+        for _, v in ipairs(cands) do
+            if ev.visuals[v] then return true end
+        end
+    end
+    if type(r.icon) == "string" and ev.icons[r.icon] then return true end
+    return false
+end
+
 ---Every buyable row for a barn, in the dealer's own order.
 ---Returns a list of { index, title, ageText, each, subType, row }, and an error.
 --
@@ -618,7 +672,7 @@ function AnimalBuySchedule.runOne(s)
     local replaced, rwhy = AnimalBuySchedule.dealerReplaced()
     if replaced then return 0, 0, "stood down: " .. tostring(rwhy) end
 
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     local p  = (SD ~= nil and SD.placeableByUid ~= nil) and SD.placeableByUid(s.uid) or nil
     if p == nil then return 0, 0, "barn not found" end
 
@@ -773,9 +827,20 @@ function AnimalBuySchedule:onHourChanged(hour)
         local env = g_currentMission ~= nil and g_currentMission.environment or nil
         hour = env ~= nil and env.currentHour or nil
     end
+    -- SELL ORDERS EVERY HOUR (author, 2026-09-14), ahead of the buy orders' daily hour.
+    -- Births land the moment a new month begins (onPeriodChanged), so a sale that
+    -- waited for 08:00 could fall AFTER the births it was meant to make room for --
+    -- and on a one-day month an order set after 08:00 would not run until the next
+    -- month had already started. Hourly, a due order runs within the hour. It cannot
+    -- sell twice: a run that sold books the next due month.
+    if AnimalSellSchedule ~= nil and AnimalSellSchedule.runDue ~= nil
+       and #(AnimalSellSchedule.orders or {}) > 0 then
+        local okS, errS = pcall(AnimalSellSchedule.runDue)
+        if not okS then warn("sell order pass failed: %s", tostring(errS)) end
+    end
+
     if hour ~= AnimalBuySchedule.RUN_HOUR then return end
     if #AnimalBuySchedule.schedules == 0 then return end
-
     local ok, err = pcall(AnimalBuySchedule.runDue)
     if not ok then warn("buy schedule pass failed: %s", tostring(err)) end
 end
@@ -931,4 +996,5 @@ function AnimalBuySchedule.installConsole()
     return true
 end
 
-AnimalBuySchedule.installConsole()
+-- Off for release: see HusbandryRedux.DEV_CONSOLE.
+if HusbandryRedux ~= nil and HusbandryRedux.DEV_CONSOLE then AnimalBuySchedule.installConsole() end

@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalSellRules.lua  (Animal Redux)
+-- AnimalSellRules.lua  (Husbandry Redux)
 --
 -- WHAT TO SELL, AND WHY. Layer 1 of three: this decides, persistence stores the
 -- player's thresholds, and the executor carries it out. Both of those drive THIS,
@@ -599,6 +599,115 @@ function AnimalSellRules.slotUseGap(a)
     return first
 end
 
+---WHICH ANIMALS GO FIRST -- the one ordering, shared by every path that sells.
+--
+-- Extracted from `plan` 2026-09-10 so a standing ORDER and the rules engine
+-- cannot disagree about which animal to take. A second copy of this comparator
+-- is exactly the drift this project keeps paying for, and "sell oldest" is now
+-- the ONLY thing a standing order is allowed to consult -- so it had better be
+-- the same "oldest" the plan means.
+--
+-- EARNINGS RANK ABOVE AGE AND BELOW PEAK, which is the deliberate part. Peak
+-- state is a fact about the price curve and is certain; earnings depend on prices
+-- and on the barn's efficiency and can be unknown, so they refine the order
+-- within a peak state rather than overriding it. Where earnings ARE known, the
+-- lowest monthly margin goes first -- a better answer than "oldest" whenever a
+-- barn holds two clusters of the same age doing different work, and identical to
+-- it when they do not.
+--
+-- `table.sort` is not stable, so the name is the final tiebreak: a list that
+-- reshuffles under the player is a list they cannot act on.
+AnimalSellRules.REASON_ORDER = "order"
+
+---A STANDING ORDER'S PLAN -- the count the player asked for, taken in rank order,
+-- and NOTHING ELSE CONSULTED.
+--
+-- Author, 2026-09-10: *"I want no other sell order settings to impact the sale at
+-- all other than the age ordering. So should be disconnected completely."*
+--
+-- WHY THIS CANNOT BE A PERMISSIVE `cfg`, which was the obvious first idea:
+-- `plan` does not filter a list of candidates, it EMITS lines for four reasons --
+-- calf, headroom, peak, earnings. With no reason firing there are no lines at
+-- all, whatever the settings say, so an order for 20 would quietly sell nothing.
+-- Loosening the rules could never produce "sell exactly 20"; only bypassing them
+-- can. That is why this is a separate entry point rather than a configuration.
+--
+-- IT SHARES `rankClusters` WITH THE RULES ENGINE, deliberately: the one thing an
+-- order IS allowed to consult had better mean the same "oldest" the rest of the
+-- mod means.
+--
+-- THE ONE REFUSAL THAT REMAINS IS NOT A SETTING. A dealer fee is charged PER
+-- ANIMAL (13.5) and on a cheap animal can exceed its price, so the sale realises
+-- NEGATIVE money -- it destroys the animal and charges you for it. Refusing that
+-- is not a rule the player switched on; it is the difference between selling and
+-- burning. It is reported as a note so the refusal is visible rather than silent.
+---Returns a plan in `AnimalSellRules.plan`'s own shape.
+function AnimalSellRules.orderPlan(p, count, priceFn)
+    local a = AnimalSellRules.assess(p)
+    local plan = { lines = {}, total = 0, revenue = 0, assess = a, notes = {} }
+    count = tonumber(count) or 0
+    if a == nil or type(a.clusters) ~= "table" or #a.clusters == 0 or count <= 0 then
+        return plan
+    end
+
+    local left = count
+    local refused = nil
+    for _, c in ipairs(AnimalSellRules.rankClusters(a)) do
+        if left <= 0 then break end
+        local n = math.min(left, c.count or 0)
+        if n > 0 then
+            local rev, realised = (c.each or 0) * n, false
+            if priceFn ~= nil then
+                local ok, v = pcall(priceFn, c.cluster, n)
+                if ok and type(v) == "number" then rev, realised = v, true end
+            end
+            if realised and rev <= 0 then
+                if refused == nil then
+                    refused = { name = c.name, count = n, revenue = rev, each = c.each }
+                end
+            else
+                plan.lines[#plan.lines + 1] = {
+                    cluster = c.cluster, name = c.name, count = n,
+                    reason = AnimalSellRules.REASON_ORDER,
+                    each = c.each, revenue = rev, gross = (c.each or 0) * n,
+                    age = c.age, healthPct = c.healthPct,
+                }
+                plan.total = plan.total + n
+                plan.revenue = plan.revenue + rev
+                left = left - n
+            end
+        end
+    end
+
+    -- SHORT IS REPORTED, NOT PADDED. A barn holding fewer animals than the order
+    -- asks for sells what it has; saying so is the caller's job and `buildPlan`
+    -- already does it.
+    if refused ~= nil then
+        plan.notes[#plan.notes + 1] = { kind = "refused", name = refused.name,
+                                        count = refused.count, revenue = refused.revenue,
+                                        each = refused.each }
+    end
+    return plan
+end
+
+function AnimalSellRules.rankClusters(a)
+    local order = {}
+    if a == nil or type(a.clusters) ~= "table" then return order end
+    for _, c in ipairs(a.clusters) do order[#order + 1] = c end
+    local function margin(c)
+        return c.econ ~= nil and c.econ.marginPerMonth or nil
+    end
+    table.sort(order, function(x, y)
+        if x.pastPeak ~= y.pastPeak then return x.pastPeak end       -- losing value now
+        if x.atPeak ~= y.atPeak then return x.atPeak end             -- nothing left to gain
+        local mx, my = margin(x), margin(y)
+        if mx ~= nil and my ~= nil and mx ~= my then return mx < my end  -- earns least first
+        if (x.age or 0) ~= (y.age or 0) then return (x.age or 0) > (y.age or 0) end  -- oldest first
+        return tostring(x.name) < tostring(y.name)                   -- stable
+    end)
+    return order
+end
+
 function AnimalSellRules.plan(p, cfg, priceFn)
     cfg = cfg or {}
     -- Returns the money AND whether it is REALISED -- the game's own net, via
@@ -665,19 +774,7 @@ function AnimalSellRules.plan(p, cfg, priceFn)
     -- known, the lowest monthly margin goes first -- which is a better answer than
     -- "oldest" whenever a barn holds two clusters of the same age doing different
     -- work, and identical to it when they do not.
-    local function margin(c)
-        return c.econ ~= nil and c.econ.marginPerMonth or nil
-    end
-    local order = {}
-    for _, c in ipairs(a.clusters) do order[#order + 1] = c end
-    table.sort(order, function(x, y)
-        if x.pastPeak ~= y.pastPeak then return x.pastPeak end       -- losing value now
-        if x.atPeak ~= y.atPeak then return x.atPeak end             -- nothing left to gain
-        local mx, my = margin(x), margin(y)
-        if mx ~= nil and my ~= nil and mx ~= my then return mx < my end  -- earns least first
-        if x.age ~= y.age then return x.age > y.age end              -- oldest first
-        return tostring(x.name) < tostring(y.name)                   -- stable
-    end)
+    local order = AnimalSellRules.rankClusters(a)
 
     -- A SALE THAT PAYS NOTHING IS NOT A SALE. 13.5 measured a dealer fee that is
     -- charged PER ANIMAL; on a cheap animal it can exceed the animal's own price,

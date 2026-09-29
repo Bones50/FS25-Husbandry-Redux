@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
-<!-- Animal Redux: THE SELL RULES for ONE barn-breed.
+<!-- Husbandry Redux: THE SELL RULES for ONE barn-breed.
 
      Opened from the BREEDS tab, which is where the purpose is set, so this window
      never has to ask which barn or which breed. Its subtitle says both.

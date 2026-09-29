@@ -1,5 +1,5 @@
 -- ============================================================================
--- HerdInspectorPage.lua  (Animal Redux) -- the second Animals tab
+-- HerdInspectorPage.lua  (Husbandry Redux) -- the second Animals tab
 --
 -- A SECOND tab beside the existing one, not a replacement. Both load, both work,
 -- and the old one is deleted only once this has earned it -- which is the whole
@@ -27,7 +27,7 @@
 --
 -- THE CLASS IS BUILT AT INSTALL TIME, not at chunk load: it extends DR's
 -- DistributionMenuPage and DR's environment does not exist when this file is
--- sourced (mods load alphabetically and FS25_Animal_Redux comes first). Methods
+-- sourced (mods load alphabetically and FS25_Husbandry_Redux comes first). Methods
 -- are defined on a plain table here; the inheritance is wired in install().
 -- ============================================================================
 
@@ -38,6 +38,189 @@ HerdInspectorPage.VIEW_GROUPS, HerdInspectorPage.VIEW_BARN = 1, 2
 -- with VIEW_BARN, because a purpose is per (barn, breed) and the barn has to be
 -- chosen before the question means anything (29.1).
 HerdInspectorPage.VIEW_BREEDS = 3
+---THE FOURTH VIEW: the BARN view, narrowed to ONE animal type (2026-09-13).
+-- Requested so a player can work one species at a time. It is the barn view in
+-- every respect -- same panel, same tables, same footer -- with the barn list
+-- filtered. The filter is a TABLE keyed by view rather than a pig special case,
+-- so a Cows or Sheep tab later is one entry here plus a tab slot and a label.
+HerdInspectorPage.VIEW_PIGS = 4
+---THE FIFTH VIEW: COWS (author, 2026-09-24). The Pigs tab in every respect -- same two
+-- tables, same in-row Buy / Sell / Auto Trader, same feeding switch -- with two
+-- differences that come from the animal rather than the page, and both live in the DATA:
+--   PRODUCTION  cows make milk from 12 months (14.4) where a pig makes nothing but its
+--               own growth, so a dairy herd earns while it is held
+--   AGE         only cows lose value after peak (11.3), so "sell each cohort at peak" is
+--               the right rotation for a pig and the wrong one for a milking cow
+-- HusbandryRedux.rotationOf answers both through the sale-age search (AnimalAdvisor.saleAge)
+-- for any breed whose curve declines; the page itself needs no cow special case.
+HerdInspectorPage.VIEW_COWS = 5
+---EVERY OTHER ANIMAL TYPE (author, 2026-09-24), and the BARN INSPECTOR RETIRED with them:
+-- once every type has its own tab, a view listing all barns of all types is the same
+-- barns again in a worse layout. VIEW_BARN stays DEFINED (isBarnLayout still names it)
+-- but no tab leads to it.
+--
+-- THE FIVE BASE-GAME TYPES, read from sdk/xmlDoku/character/animals.xml: COW, PIG, SHEEP,
+-- HORSE, CHICKEN. Goats are a SHEEP subtype, not a type of their own, so they appear on the
+-- Sheep tab.
+--
+-- AND "OTHER", because a mod can register a type of its own, and with no Barn Inspector a
+-- barn of that type would otherwise have no tab at all -- unreachable rather than merely
+-- untidy. It takes every barn whose type is not one of the five (or cannot be resolved),
+-- and like every type tab it only appears when such a barn exists.
+HerdInspectorPage.VIEW_SHEEP    = 6
+HerdInspectorPage.VIEW_HORSES   = 7
+HerdInspectorPage.VIEW_CHICKENS = 8
+HerdInspectorPage.VIEW_OTHER    = 9
+HerdInspectorPage.VIEW_MAX      = 9
+---The sentinel the OTHER view filters on: "not one of the known types".
+HerdInspectorPage.OTHER_TYPES = "*OTHER*"
+---Which animal TYPE each type view shows, compared against the barn's declared
+-- type name upper-cased (the same normalisation breedsOfType uses).
+HerdInspectorPage.VIEW_TYPE_FILTER = { [HerdInspectorPage.VIEW_PIGS]     = "PIG",
+                                       [HerdInspectorPage.VIEW_COWS]     = "COW",
+                                       [HerdInspectorPage.VIEW_SHEEP]    = "SHEEP",
+                                       [HerdInspectorPage.VIEW_HORSES]   = "HORSE",
+                                       [HerdInspectorPage.VIEW_CHICKENS] = "CHICKEN",
+                                       [HerdInspectorPage.VIEW_OTHER]    = HerdInspectorPage.OTHER_TYPES }
+
+---Is this a TYPE view? They share one layout -- the split breed / animal tables -- so
+-- every "is this the Pigs tab" test on the page asks this instead.
+function HerdInspectorPage.isTypeView(v)
+    return HerdInspectorPage.VIEW_TYPE_FILTER[v] ~= nil
+end
+
+---Does view `v` take a barn whose type is `typeName`? Views that are not type views take
+-- every barn. OTHER takes whatever none of the named types claims -- including a barn
+-- whose type could not be resolved, which would otherwise be unreachable.
+function HerdInspectorPage.viewTakesType(v, typeName)
+    local want = HerdInspectorPage.VIEW_TYPE_FILTER[v]
+    if want == nil then return true end
+    local t = (typeName ~= nil) and tostring(typeName):upper() or nil
+    if want == HerdInspectorPage.OTHER_TYPES then
+        if t == nil then return true end
+        for view, name in pairs(HerdInspectorPage.VIEW_TYPE_FILTER) do
+            if view ~= v and name == t then return false end
+        end
+        return true
+    end
+    return t == want
+end
+
+---WHICH HOST A PAGE INSTANCE SERVES (2026-09-27). With a Distribution Redux new enough to
+-- navigate an Overview tab to a page (its API v15), the page is built TWICE from the same class
+-- and XML:
+--   MODE_OVERVIEW  the Animals and Breeds views, reached from the Overview's HUSBANDRY REDUX tab.
+--                  Its header strip is the OVERVIEW'S strip, and the two views are switched by a
+--                  button selector in the row beneath it.
+--   MODE_TYPES     the Herd Inspector's own left row: one tab per animal type the farm keeps.
+--   nil            everything in one strip -- standalone, or a DR too old to host the split. That
+--                  is the layout this page had before, unchanged.
+-- Author, 2026-09-27: "move the animals and breeds tabs to the overview UI under the Husbandry
+-- Redux tab. By default it should show the Animals page."
+HerdInspectorPage.MODE_OVERVIEW = "overview"
+HerdInspectorPage.MODE_TYPES    = "types"
+
+---May this instance show view `v` at all? Presence (does the farm have one) is a separate test.
+function HerdInspectorPage:viewAllowed(v)
+    local m = self.hostMode
+    if m == nil then return true end
+    if m == HerdInspectorPage.MODE_OVERVIEW then
+        return v == HerdInspectorPage.VIEW_GROUPS or v == HerdInspectorPage.VIEW_BREEDS
+    end
+    if m == HerdInspectorPage.MODE_TYPES then return HerdInspectorPage.isTypeView(v) end
+    return true
+end
+
+---THE TAB ORDER. The strip shows the subset of these that have something to show
+-- (tabViews), so this is the order they appear in, not a list of slots.
+HerdInspectorPage.TAB_ORDER = {
+    HerdInspectorPage.VIEW_GROUPS, HerdInspectorPage.VIEW_BREEDS,
+    HerdInspectorPage.VIEW_PIGS, HerdInspectorPage.VIEW_COWS, HerdInspectorPage.VIEW_SHEEP,
+    HerdInspectorPage.VIEW_HORSES, HerdInspectorPage.VIEW_CHICKENS, HerdInspectorPage.VIEW_OTHER,
+}
+---Each view's tab label and page title. Keys are LITERALS so check_l10n_animal can see them.
+HerdInspectorPage.VIEW_TEXT = {
+    [HerdInspectorPage.VIEW_GROUPS]   = { "ar_hi_view_groups",   "Animals",        "ar_hi_page_title",          "HUSBANDRY REDUX - HERD INSPECTOR" },
+    [HerdInspectorPage.VIEW_BREEDS]   = { "ar_hi_view_breeds",   "BREEDS",         "ar_hi_page_title_breeds",   "HUSBANDRY REDUX - BREEDS" },
+    [HerdInspectorPage.VIEW_PIGS]     = { "ar_hi_view_pigs",     "Pigs",           "ar_hi_page_title_pigs",     "HUSBANDRY REDUX - PIGS" },
+    [HerdInspectorPage.VIEW_COWS]     = { "ar_hi_view_cows",     "Cows",           "ar_hi_page_title_cows",     "HUSBANDRY REDUX - COWS" },
+    [HerdInspectorPage.VIEW_SHEEP]    = { "ar_hi_view_sheep",    "Sheep",          "ar_hi_page_title_sheep",    "HUSBANDRY REDUX - SHEEP" },
+    [HerdInspectorPage.VIEW_HORSES]   = { "ar_hi_view_horses",   "Horses",         "ar_hi_page_title_horses",   "HUSBANDRY REDUX - HORSES" },
+    [HerdInspectorPage.VIEW_CHICKENS] = { "ar_hi_view_chickens", "Chickens",       "ar_hi_page_title_chickens", "HUSBANDRY REDUX - CHICKENS" },
+    [HerdInspectorPage.VIEW_OTHER]    = { "ar_hi_view_other",    "Other",          "ar_hi_page_title_other",    "HUSBANDRY REDUX - OTHER ANIMALS" },
+}
+
+---WHICH VIEWS HAVE SOMETHING TO SHOW, from a list of barns carrying `typeName`.
+-- The Herd Inspector always shows (it is where a farm with no animals says so); Breeds
+-- needs a barn; a type view needs a barn of its type. Returns the set and a signature,
+-- so a caller can tell cheaply whether the strip needs redrawing.
+function HerdInspectorPage.presenceOf(barns)
+    local present = { [HerdInspectorPage.VIEW_GROUPS] = true }
+    for _, b in ipairs(barns or {}) do
+        present[HerdInspectorPage.VIEW_BREEDS] = true
+        for v in pairs(HerdInspectorPage.VIEW_TYPE_FILTER) do
+            if not present[v] and HerdInspectorPage.viewTakesType(v, b.typeName) then present[v] = true end
+        end
+    end
+    local sig = {}
+    for _, v in ipairs(HerdInspectorPage.TAB_ORDER) do
+        if present[v] then sig[#sig + 1] = tostring(v) end
+    end
+    return present, table.concat(sig, ",")
+end
+
+---The views the strip shows, in TAB_ORDER. Before anything has been enumerated only the
+-- Herd Inspector is known to have something to show.
+function HerdInspectorPage:tabViews()
+    local present = self._present or { [HerdInspectorPage.VIEW_GROUPS] = true }
+    local out = {}
+    for _, v in ipairs(HerdInspectorPage.TAB_ORDER) do
+        if present[v] and self:viewAllowed(v) then out[#out + 1] = v end
+    end
+    -- A TYPES PAGE ON A FARM WITH NO ANIMALS has no type tab to show. It falls back to the
+    -- Animals view, which is where a farm with no animals is told so -- a page with no view at
+    -- all would draw its last one or nothing.
+    if #out == 0 then out[1] = HerdInspectorPage.VIEW_GROUPS end
+    return out
+end
+
+---Enumerate the barns and record which views have something to show. Its own enumerate,
+-- for the moments BEFORE rebuild runs (a frame opening); rebuild keeps it current after.
+function HerdInspectorPage:refreshPresence()
+    local all = (AnimalHerdData ~= nil and AnimalHerdData.enumerate ~= nil) and AnimalHerdData.enumerate() or {}
+    for _, b in ipairs(all) do
+        if b.typeName == nil and AnimalHerdData.animalTypeOf ~= nil then
+            b.typeIndex, b.typeName = AnimalHerdData.animalTypeOf(b.placeable)
+        end
+    end
+    self._present, self._tabSig = HerdInspectorPage.presenceOf(all)
+end
+
+---KEEP THE CURRENT VIEW ONE THE STRIP ACTUALLY SHOWS. A view whose last barn was
+-- demolished -- or the first open, with nothing chosen yet -- lands on the first ANIMAL tab,
+-- since those carry the panel and the tables the Barn Inspector used to; with no animals at
+-- all, on the Herd Inspector. Returns true when the view changed.
+function HerdInspectorPage:ensureViewValid()
+    local views = self:tabViews()
+    for _, v in ipairs(views) do
+        if v == self.viewIndex then return false end
+    end
+    -- views[1] is the Animals view whenever this instance offers it (TAB_ORDER puts it first),
+    -- so the rule below is unchanged for the combined page and gives the Overview page Animals.
+    local pick = views[1] or HerdInspectorPage.VIEW_GROUPS
+    for _, v in ipairs(views) do
+        if HerdInspectorPage.isTypeView(v) then pick = v; break end
+    end
+    self.viewIndex = pick
+    return true
+end
+
+---Is this a view drawn with the BARN layout (panel + tables)? The plain barn
+-- view and every type-filtered view alike. BREEDS shares the barn list but not
+-- the layout, so it is deliberately not included.
+function HerdInspectorPage.isBarnLayout(v)
+    return v == HerdInspectorPage.VIEW_BARN or HerdInspectorPage.VIEW_TYPE_FILTER[v] ~= nil
+end
 
 ---EVERY LIST ON THE PAGE, and the subset that depends on WHICH BARN is selected.
 --
@@ -48,11 +231,13 @@ HerdInspectorPage.VIEW_BREEDS = 3
 -- until the next PACED tick, reported as "it takes a few seconds"). Neither
 -- errored; both simply did nothing.
 HerdInspectorPage.LIST_IDS = { "groupList", "barnList", "barnGroupList",
-                               "inputList", "prodList", "breedList" }
+                               "inputList", "madeList", "prodList", "breedList",
+                               "pigBreedList", "pigGroupList" }
 ---The panes that answer for the SELECTED barn. barnList is excluded deliberately:
 -- it is the list being clicked, and reloading a list inside its own selection
 -- callback is how a selection gets reset out from under the player.
-HerdInspectorPage.DETAIL_LISTS = { "barnGroupList", "inputList", "prodList", "breedList" }
+HerdInspectorPage.DETAIL_LISTS = { "barnGroupList", "inputList", "madeList", "prodList", "breedList",
+                                   "pigBreedList", "pigGroupList" }
 
 -- ---------------------------------------------------------------------------
 -- THE TIMESCALE.
@@ -88,7 +273,7 @@ HerdInspectorPage.PERIODS = {
 
 -- ---------------------------------------------------------------------------
 local function l10n(key, fallback)
-    if AnimalRedux ~= nil and AnimalRedux.l10n ~= nil then return AnimalRedux.l10n(key, fallback) end
+    if HusbandryRedux ~= nil and HusbandryRedux.l10n ~= nil then return HusbandryRedux.l10n(key, fallback) end
     return fallback
 end
 
@@ -229,70 +414,9 @@ local function scaled(v, k)
     return v * k
 end
 
----THE RECOMMENDATION AS A SENTENCE. AnimalSellRules returns a code and the group's
--- OWN figures; this is where they become words, which is the same split the plan's
--- `notes` have always used.
---
--- Each string names the group's own number wherever one adds something -- "gaining
--- EUR 96 / mo" beats "still appreciating", because the second is true of half the
--- farm and the first tells you which half is worth the slot.
---
--- BUDGET: the column is 204px at 12px, about 34 characters. Anything longer is
--- truncated, not wrapped (5.55).
-local REC_TEXT = {
-    calf         = { "ar_hi_rec_calf",         "Sell newborns - nursery pays more" },
-    headroom     = { "ar_hi_rec_headroom",     "Sell %d - pen full, births lost" },
-    peak         = { "ar_hi_rec_peak",         "Sell - past peak, losing %s / mo" },
-    plan         = { "ar_hi_rec_plan",         "Sell %d - see the Animals tab" },
-    unwell       = { "ar_hi_rec_unwell",       "Feed - too unwell to breed (%d%%)" },
-    young        = { "ar_hi_rec_young",        "Keep - producing in %d mo" },
-    growing      = { "ar_hi_rec_growing",      "Keep - still growing" },
-    appreciating = { "ar_hi_rec_appreciating", "Keep - gaining %s / mo" },
-    outearns     = { "ar_hi_rec_outearns",     "Keep - earns %s / mo over decline" },
-    declining    = { "ar_hi_rec_declining",    "Sell - old, losing %s / mo" },
-    steady       = { "ar_hi_rec_steady",       "Keep - steady earner, %s / mo" },
-    unprofitable = { "ar_hi_rec_unprofitable", "Sell - costs more than it earns" },
-    unknown      = { "ar_hi_rec_unknown",      "-" },
-}
-
-function HerdInspectorPage.recommendationText(rec)
-    if rec == nil then return "-", "mute" end
-    local e = REC_TEXT[rec.code]
-    if e == nil then return "-", "mute" end
-    local fmt, d = l10n(e[1], e[2]), rec.data or {}
-    local txt = fmt
-    -- ONE substitution per code, chosen when the code is: a format string with the
-    -- wrong argument type is a hard throw, and from a GUI populate that aborts the
-    -- page mid-render and shows an EMPTY list (DR 5.44 / 5.57).
-    local ok, out = pcall(function()
-        if rec.code == "headroom" or rec.code == "plan" then
-            return string.format(fmt, d.count or 0)
-        elseif rec.code == "young" then
-            return string.format(fmt, math.floor((d.months or 0) + 0.5))
-        elseif rec.code == "unwell" then
-            return string.format(fmt, math.floor((d.health or 0) + 0.5))
-        elseif rec.code == "peak" or rec.code == "declining" then
-            return string.format(fmt, money(math.abs(d.drift or 0)))
-        elseif rec.code == "appreciating" then
-            return string.format(fmt, money(d.gain or 0))
-        elseif rec.code == "outearns" then
-            return string.format(fmt, money(d.margin or 0))
-        elseif rec.code == "steady" then
-            return string.format(fmt, money(d.earns or 0))
-        end
-        return fmt
-    end)
-    if ok and type(out) == "string" then txt = out end
-
-    -- KEEP is green, SELL is ORANGE rather than red -- it is an action to take, not
-    -- a fault -- and only a herd too sick to breed is red, because that one IS a
-    -- fault and the only row here the player is losing money by ignoring.
-    local tone = "mute"
-    if rec.action == AnimalSellRules.REC_KEEP then tone = "good"
-    elseif rec.action == AnimalSellRules.REC_SELL then tone = "warn"
-    elseif rec.action == AnimalSellRules.REC_ACT then tone = "bad" end
-    return txt, tone
-end
+-- THE ANIMALS VIEW'S RECOMMENDATION COLUMN IS GONE (2026-09-28): advice is per BREED now
+-- and lives on the breed tables, so a per-group verdict beside it would be a second,
+-- competing answer. AnimalSellRules.recommendation is kept; nothing here calls it.
 
 function HerdInspectorPage:buildGroupRows()
     local rows = {}
@@ -321,21 +445,13 @@ function HerdInspectorPage:buildGroupRows()
             local change = nil
             local dpm = (c.econ ~= nil) and c.econ.driftPerMonth or nil
             if type(dpm) == "number" then change = -dpm * (c.count or 0) end
-            -- WHAT TO DO WITH THIS GROUP, and why. A CODE and DATA, never a
-            -- sentence: AnimalSellRules is pure and has no business knowing what
-            -- language the player reads, so the wording is resolved below.
-            local rec = nil
-            if AnimalSellRules ~= nil and AnimalSellRules.recommendation ~= nil then
-                local okR, r = pcall(AnimalSellRules.recommendation, c, b.plan)
-                if okR and type(r) == "table" then rec = r end
-            end
             rows[#rows + 1] = {
                 icon = AnimalHerdData.animalIconFile(c.subTypeIndex, c.age),
                 animal = c.name, barn = b.name, barnIndex = bi, barnUid = b.uid,
                 typeIndex = b.typeIndex, count = c.count, age = c.age,
                 healthPct = c.healthPct, repro = rTxt, reproTone = rTone,
                 litresPerDay = milk, each = c.each, total = c.total,
-                change = change, capped = (eff < 0.999), rec = rec,
+                change = change, capped = (eff < 0.999),
                 cluster = c.cluster,   -- identity, for the trade dialog's default
             }
         end
@@ -383,6 +499,21 @@ function HerdInspectorPage.inputGroupTitle(key)
     return tostring(key or "?")
 end
 
+---STRAW IS HELD TWICE ON A ROBOT BARN and the two are not the same straw: one sits
+-- in the robot's 49,000 L mix bunker, the other is bedding in spec_husbandryStraw.
+-- Different purposes, different rates, two real holdings of one fill type -- so two
+-- rows, distinguished by this label. Merging them would force one HELD figure and
+-- lie about the other.
+function HerdInspectorPage.mixGroupTitle()
+    return l10n("ar_hi_group_mix", "Mix ingredient")
+end
+
+---The GROUP column for a complete ration such as pig food: it satisfies every
+-- group at once, so it belongs to none of them.
+function HerdInspectorPage.rationGroupTitle()
+    return l10n("ar_hi_group_ration", "Complete ration")
+end
+
 function HerdInspectorPage:buildInputRows(b)
     local rows = {}
     if b == nil then return rows end
@@ -414,13 +545,125 @@ function HerdInspectorPage:buildInputRows(b)
     end
     local byFt = (feed ~= nil and feed.byFillType) or {}
 
+    -- ---- THE ROBOT'S INGREDIENT BUNKERS ---------------------------------
+    --
+    -- These are the products a robot barn actually BUYS, and until now not one of
+    -- them had an honest row: silage, hay and straw read zero because `trough`
+    -- holds only the mixed product, and MINERAL FEED had no row at all -- it is in
+    -- no cow food group and no declared subtype input, so neither loop below could
+    -- ever produce one. At 1.20/L against silage at 0.121 it is the most expensive
+    -- thing in the mix and was invisible on every screen, including the profit line.
+    local bunkers = b.robotBunkers or {}
+    local rates = b.ingredientRates or {}
+    -- NIL IS NOT AN EMPTY TROUGH. A caller that predates the delivered/grazed split
+    -- carries no troughMap at all, and defaulting it to {} would read every held
+    -- figure as ZERO rather than as "unknown" -- a silent false zero on the one
+    -- column this whole change exists to make honest. Absent means fall back to
+    -- availability, which IS the pre-split behaviour and is identical on any barn
+    -- without a meadow.
+    local troughMap = b.troughMap
     local seen = {}
+
+    -- ---- COMPLETE RATIONS (pig food) --------------------------------------
+    --
+    -- 2026-09-14. Pig food is split into its crops as it reaches the trough, so it
+    -- had no row anywhere and was charged as crops. One row per mixture the barn's
+    -- animals can eat, ALWAYS shown, so its cost is visible before any is bought:
+    --   HELD      the pig food still in the trough, as the crops it became
+    --   NEEDS     the whole appetite, since one ration can cover every group
+    --   COST IF ALL  that appetite at the ration's price
+    --   USED / COST NOW  what the ledger says is being eaten from it
+    local derived = {}
+    if AnimalFeedModel ~= nil and AnimalFeedModel.MixLedger ~= nil and b.placeable ~= nil then
+        local okD, d = pcall(AnimalFeedModel.MixLedger.derivedOf, b.placeable)
+        if okD and type(d) == "table" then derived = d end
+    end
+    local mixHeldBy = {}
+    for _, d in pairs(derived) do
+        for ft, litres in pairs(d.byIngredient or {}) do
+            mixHeldBy[ft] = (mixHeldBy[ft] or 0) + litres
+        end
+    end
+    local rationTitle = HerdInspectorPage.rationGroupTitle()
+    for _, mixFt in ipairs((b.model ~= nil and b.model.mixtures) or {}) do
+        if mixFt ~= b.mixedFt and not seen[mixFt] then
+            seen[mixFt] = "ration"
+            local price = priceOf(mixFt)
+            local e = byFt[mixFt]
+            local d = derived[mixFt]
+            local demand = tonumber(b.demand)
+            rows[#rows + 1] = {
+                fillType = mixFt, group = rationTitle,
+                held = (d ~= nil and d.held) or 0,
+                needs = demand,
+                cost = (price ~= nil and demand ~= nil) and (price * demand) or nil,
+                actual = price ~= nil and ((e ~= nil and e.cost) or 0) or nil,
+                used = (e ~= nil and e.eaten) or 0,
+                charged = (e ~= nil and e.charged) or 0,
+            }
+        end
+    end
+
+    for ft, bunk in pairs(bunkers) do
+        seen[ft] = "bunker"
+        local price = priceOf(ft)
+        local e = byFt[ft]
+        -- NEEDS is the hourly draw at the recipe ratio; nil (not zero) when the
+        -- recipe could not be read, because "costs nothing" and "cannot be priced"
+        -- are different facts and only one of them is true here.
+        local needs = rates[ft]
+        rows[#rows + 1] = {
+            fillType = ft, group = HerdInspectorPage.mixGroupTitle(),
+            held = bunk.held, capacity = bunk.capacity, needs = needs,
+            cost = (price ~= nil and needs ~= nil) and (price * needs) or nil,
+            actual = (price ~= nil and e ~= nil) and e.cost or nil,
+            -- eaten / charged: the grazing split (see the USED column)
+            used = e ~= nil and e.eaten or nil,
+            charged = e ~= nil and e.charged or nil,
+        }
+    end
+
     for _, g in ipairs(b.groups or {}) do
         for _, ft in ipairs(g.fts or {}) do
+            -- THE MIXED PRODUCT IS NOT AN INPUT ON A ROBOT BARN. The farm never
+            -- bought a litre of it; the robot made it from the bunkers above, so it
+            -- belongs in the PRODUCED table with a value rather than a cost.
+            local skip = (ft == b.mixedFt)
+            -- ...and a tier whose product IS one of those bunkers is already listed,
+            -- so it is only worth a SECOND row when the pool genuinely holds some --
+            -- i.e. somebody tipped it straight into the trough. Otherwise a robot
+            -- barn shows Silage and Hay twice, once with the real figure and once
+            -- with a permanent zero.
+            if not skip and seen[ft] == "bunker"
+               and ((troughMap ~= nil and troughMap[ft] or 0) <= 0) then skip = true end
+            if not skip then
             seen[ft] = true
             local price = priceOf(ft)
-            local held = trough[ft] or 0
+            -- AVAILABLE, NOT DELIVERED -- and this REVERSES the rule that stood
+            -- here, deliberately (author, 2026-09-10):
+            --
+            --   "the grass never goes through the trough ... include the grass in
+            --    the meadow as grass in the trough ... this ensures the grass
+            --    inputs reflect the meadow as well as the trough and now the
+            --    consumption makes more sense."
+            --
+            -- The old rule showed the TROUGH alone, to keep the delivered/grazed
+            -- split honest. Its stated objection was that counting the meadow here
+            -- too "would show the same litres twice" -- true, and it is no longer
+            -- the greater evil: a grazing pen read **HELD 0 against USED 45**,
+            -- which is not a split, it is a contradiction. HELD now answers the
+            -- question the column is actually read for -- "how much can they eat"
+            -- -- while COST NOW still charges only the bought share, and the
+            -- PRODUCED table still breaks out where it came from.
+            local held = (trough ~= nil) and (trough[ft] or 0) or nil
+            if held == nil and troughMap ~= nil then held = troughMap[ft] or 0 end
+            -- THE PIG-FOOD PART OF THIS CROP IS NOT ITS OWN. It is listed under the
+            -- ration it came from (the row above) and in PRODUCED (what it became),
+            -- so this row carries only the crop that was delivered loose.
+            local mixHeld = mixHeldBy[ft] or 0
+            if held ~= nil and mixHeld > 0 then held = math.max(0, held - mixHeld) end
             local e = byFt[ft]
+            local fromMix = (e ~= nil and e.fromMix) or 0
             -- A REAL ZERO READS AS ONE and an unpriceable product still reports
             -- nil: "costing nothing" and "cannot be priced" are different facts.
             local actual = nil
@@ -430,7 +673,10 @@ function HerdInspectorPage:buildInputRows(b)
                 held = held, needs = g.need,
                 cost = (price ~= nil and g.need ~= nil) and (price * g.need) or nil,
                 actual = actual,
+                used = e ~= nil and math.max(0, (e.eaten or 0) - fromMix) or nil,
+                charged = e ~= nil and math.max(0, (e.charged or 0) - fromMix) or nil,
             }
+            end
         end
     end
 
@@ -466,19 +712,138 @@ function HerdInspectorPage:buildInputRows(b)
                 -- columns keep meaning what they mean on the food rows above
                 cost = price ~= nil and (price * e.rate) or nil,
                 actual = e.cost,
+                -- straw and water are never grazed, so used == charged and the
+                -- USED column simply reports consumption
+                used = e.consumed, charged = e.consumed,
             }
         end
     end
 
     -- grouped, so a tier's products sit together and the tiers keep the order
-    -- readBarn sorted them into (the best tier first)
+    -- readBarn sorted them into (the best tier first). BUNKER ROWS LEAD, because on
+    -- a robot barn they are the whole of what the farm buys.
     local order = {}
+    local mixTitle = HerdInspectorPage.mixGroupTitle()
+    order[mixTitle] = 0
+    order[HerdInspectorPage.rationGroupTitle()] = 0.5
     for i, g in ipairs(b.groups or {}) do order[g.title] = i end
     table.sort(rows, function(x, y)
         local ox, oy = order[x.group] or 99, order[y.group] or 99
         if ox ~= oy then return ox < oy end
         return (x.fillType or 0) < (y.fillType or 0)
     end)
+    return rows
+end
+
+---WHAT THE BARN MAKES FOR ITSELF: feed it did not buy.
+--
+-- TWO SOURCES, ONE RULE. A feeding robot mixes bought ingredients into TMR; a
+-- meadow grows grass out of nothing. Both are feed that appears in the barn
+-- without a purchase, so both belong here rather than sitting in INPUTS looking
+-- like a bill -- which is exactly what caught the author out: grass showed as a
+-- priced input while the cost model (correctly) charged nothing for it. The
+-- display and the economics disagreed, and this is what settles them.
+--
+-- VALUE, NOT COST, and it is deliberately NOT added to the barn's running cost.
+-- For the mix that would double-count the ingredients that made it; for grazing
+-- there is nothing to count at all. What the column says is what the feed WOULD
+-- have cost to buy -- for a meadow, what it saves you.
+function HerdInspectorPage:buildProducedRows(b)
+    local rows = {}
+    if b == nil then return rows end
+    local function priceOf(ft)
+        if AnimalEconomics == nil or AnimalEconomics.pricePerLitre == nil then return nil end
+        return AnimalEconomics.pricePerLitre(ft)
+    end
+    local feed = nil
+    if AnimalEconomics ~= nil and AnimalEconomics.feedCostPerHour ~= nil then
+        local okF, fc = pcall(AnimalEconomics.feedCostPerHour,
+                              b.placeable, b.model, b.trough, b.demand)
+        if okF and type(fc) == "table" then feed = fc end
+    end
+    local byFt = (feed ~= nil and feed.byFillType) or {}
+    local troughMap = b.troughMap or b.trough or {}   -- see the note in buildInputRows
+
+    -- (a) the robot's mix. HELD is the pool, which is the only thing in it.
+    if b.mixedFt ~= nil then
+        local e = byFt[b.mixedFt]
+        local price = priceOf(b.mixedFt)
+        local rate = (e ~= nil and e.eaten) or 0
+        rows[#rows + 1] = {
+            product = b.mixedFt, group = l10n("ar_hi_group_mixed", "Mixed feed"),
+            held = troughMap[b.mixedFt] or 0, rate = rate,
+            value = price ~= nil and (rate * price) or nil,
+        }
+    end
+
+    -- (c) COMPLETE RATIONS: what the pig food became. HELD is the part of each crop
+    -- in the trough that came from the ration, RATE the part being eaten, and VALUE
+    -- what that much of the crop would cost bought loose -- so the row says whether
+    -- the ration is dearer or cheaper than its own ingredients.
+    local derivedMix = {}
+    if AnimalFeedModel ~= nil and AnimalFeedModel.MixLedger ~= nil and b.placeable ~= nil then
+        local okD, d = pcall(AnimalFeedModel.MixLedger.derivedOf, b.placeable)
+        if okD and type(d) == "table" then derivedMix = d end
+    end
+    local mixFts, seenMix = {}, {}
+    for mixFt in pairs(derivedMix) do
+        if not seenMix[mixFt] then seenMix[mixFt] = true; mixFts[#mixFts + 1] = mixFt end
+    end
+    for ft, e in pairs(byFt) do
+        if e.mixture and not seenMix[ft] then seenMix[ft] = true; mixFts[#mixFts + 1] = ft end
+    end
+    table.sort(mixFts)
+    for _, mixFt in ipairs(mixFts) do
+        local d = derivedMix[mixFt] or { byIngredient = {} }
+        local e = byFt[mixFt]
+        local rates = (e ~= nil and e.ingredients) or {}
+        local ings, seenIng = {}, {}
+        for ft in pairs(d.byIngredient or {}) do
+            if not seenIng[ft] then seenIng[ft] = true; ings[#ings + 1] = ft end
+        end
+        for ft in pairs(rates) do
+            if not seenIng[ft] then seenIng[ft] = true; ings[#ings + 1] = ft end
+        end
+        table.sort(ings)
+        for _, ft in ipairs(ings) do
+            local held = (d.byIngredient or {})[ft] or 0
+            local rate = rates[ft] or 0
+            if held > 0 or rate > 0 then
+                local price = priceOf(ft)
+                rows[#rows + 1] = {
+                    product = ft, group = ftTitle(mixFt),
+                    held = held, rate = rate,
+                    value = price ~= nil and (rate * price) or nil,
+                }
+            end
+        end
+    end
+
+    -- (b) grazing. The grazed share of a product is availability MINUS the trough,
+    -- the same split feedCostPerHour uses to avoid billing for pasture; the free
+    -- share of what was eaten is `eaten - charged`, which is that correction's own
+    -- arithmetic read back out.
+    if b.grazes then
+        for _, g in ipairs(b.groups or {}) do
+            for _, ft in ipairs(g.fts or {}) do
+                if ft ~= b.mixedFt then
+                    local avail = (b.trough or {})[ft] or 0
+                    local grazedHeld = math.max(0, avail - (troughMap[ft] or 0))
+                    local e = byFt[ft]
+                    local grazedRate = math.max(0, ((e ~= nil and e.eaten) or 0)
+                                                  - ((e ~= nil and e.charged) or 0))
+                    if grazedHeld > 0 or grazedRate > 0 then
+                        local price = priceOf(ft)
+                        rows[#rows + 1] = {
+                            product = ft, group = l10n("ar_hi_group_grazed", "Grazed"),
+                            held = grazedHeld, rate = grazedRate,
+                            value = price ~= nil and (grazedRate * price) or nil,
+                        }
+                    end
+                end
+            end
+        end
+    end
     return rows
 end
 
@@ -533,7 +898,7 @@ function HerdInspectorPage:buildProductionRows(b)
     -- HELD comes from DR's assetHeld, which is the figure DR's own tabs print -- it
     -- folds a pen's pallets and its pending queue in (5.21), which getHusbandryFillLevel
     -- alone cannot see. One basis for one quantity across both mods.
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     for _, e in ipairs(order) do
         local price = nil
         if AnimalEconomics ~= nil and AnimalEconomics.pricePerLitre ~= nil then
@@ -569,14 +934,33 @@ end
 
 -- ---------------------------------------------------------------------------
 function HerdInspectorPage:rebuild()
-    self.barns = (AnimalHerdData ~= nil and AnimalHerdData.enumerate ~= nil)
+    local all = (AnimalHerdData ~= nil and AnimalHerdData.enumerate ~= nil)
         and AnimalHerdData.enumerate() or {}
 
-    -- the cluster pass, and the animal TYPE each barn declares
-    for _, b in ipairs(self.barns) do
+    -- A TYPE VIEW keeps only barns of its animal type. Filtered BEFORE the plan
+    -- pass below, because that pass walks every cluster of every barn and there
+    -- is no reason to pay for barns this view will never show.
+    local view = self:viewIndexSafe()
+    self.barns = {}
+    for _, b in ipairs(all) do
         if AnimalHerdData ~= nil and AnimalHerdData.animalTypeOf ~= nil then
             b.typeIndex, b.typeName = AnimalHerdData.animalTypeOf(b.placeable)
         end
+        if HerdInspectorPage.viewTakesType(view, b.typeName) then
+            self.barns[#self.barns + 1] = b
+        end
+    end
+    -- WHICH TABS HAVE ANYTHING, kept current from the barns this pass already read. A change
+    -- (the first pigsty built, the last one demolished) is only FLAGGED here; the strip is
+    -- redrawn by rebuildRealtimeData, because this runs inside applyView and redrawing -- or
+    -- worse, switching view -- from in here would recurse.
+    local present, sig = HerdInspectorPage.presenceOf(all)
+    if sig ~= self._tabSig then
+        self._present, self._tabSig, self._tabsDirty = present, sig, true
+    end
+
+    -- the cluster pass
+    for _, b in ipairs(self.barns) do
         b.clusters, b.plan = {}, nil
         -- PLAN, NOT assess -- and it costs no more. `plan` calls `assess` itself and
         -- hands it back as `plan.assess`, so asking for both would walk every cluster
@@ -599,9 +983,18 @@ function HerdInspectorPage:rebuild()
     -- slide a different one under the player's selection.
     self.selectedBarn = self.selectedBarn or 1
     if self.selectedUid ~= nil then
+        -- NOT FOUND RESETS TO THE FIRST ROW. A type view's list is a subset, so the
+        -- selected barn is routinely absent from it, and keeping the old INDEX would
+        -- point at whichever barn happens to sit at that row in the shorter list.
+        -- applyView then re-selects that row in the list, which raises the list's
+        -- selection event and moves selectedUid to it -- so the SELECTION FOLLOWS
+        -- THE LAST BARN LOOKED AT: after the Pigs tab, the Barns tab opens on
+        -- that pigsty rather than on the barn picked before.
+        local found = false
         for i, b in ipairs(self.barns) do
-            if b.uid == self.selectedUid then self.selectedBarn = i; break end
+            if b.uid == self.selectedUid then self.selectedBarn = i; found = true; break end
         end
+        if not found then self.selectedBarn = 1 end
     end
     if self.selectedBarn > #self.barns then self.selectedBarn = 1 end
 
@@ -625,8 +1018,45 @@ function HerdInspectorPage:rebuild()
         end
     end
     self.inputRows = self:buildInputRows(sel)
+    self.madeRows = self:buildProducedRows(sel)
     self.prodRows = self:buildProductionRows(sel)
-    self.breedRows = self:buildBreedRows(sel)
+    -- THE BREEDS VIEW SPANS THE FARM (2026-09-29): one row per breed actually held, in every
+    -- barn, with no barn chooser. The type tabs keep the per-barn list, unheld breeds included,
+    -- because that is where a purpose is set before the animals arrive.
+    if self:viewIndexSafe() == HerdInspectorPage.VIEW_BREEDS then
+        self.breedRows = self:buildFarmBreedRows()
+    else
+        self.breedRows = self:buildBreedRows(sel)
+    end
+end
+
+---EVERY BREED HELD ANYWHERE ON THE FARM, one row per (barn, breed).
+--
+-- PER BARN, NOT MERGED: purpose, the sell order and the barn's feed / profit advice are all
+-- per (barn, breed), so one row for two barns would have to invent a single answer for two
+-- questions. The BARN column says which barn a row is. Breeds with no animals are left out.
+-- Sorted by breed then barn, so one breed's barns sit together and the order does not move
+-- as animals are bought and sold (24.3).
+function HerdInspectorPage:buildFarmBreedRows()
+    local rows = {}
+    -- self.barns is already in localised name order (AnimalHerdData.sortByName), so the barn's
+    -- POSITION there is the tie-break -- zero-padded, because the id is compared as a string.
+    for pos, b in ipairs(self.barns or {}) do
+        for _, r in ipairs(self:buildBreedRows(b)) do
+            if r.held and (r.count or 0) > 0 then
+                r.barnName = b.name
+                r.barnPos  = pos
+                r.barnPlaceable = b.placeable
+                r.barnType = b.typeName
+                rows[#rows + 1] = r
+            end
+        end
+    end
+    if AnimalHerdData ~= nil and AnimalHerdData.sortByName ~= nil then
+        AnimalHerdData.sortByName(rows, function(r) return r.name end,
+                                  function(r) return string.format("%05d", r.barnPos or 0) end)
+    end
+    return rows
 end
 
 ---ONE ROW PER BREED THIS BARN COULD HOLD, held ones first.
@@ -665,9 +1095,71 @@ function HerdInspectorPage:buildBreedRows(b)
         end
     end
 
+    -- THE SELL ORDER, per breed -- which is the scope a sell order actually has
+    -- (author, 2026-09-10). The barn page keeps its own wording: a barn holding
+    -- two breeds cannot be expressed as one order.
+    --
+    -- X IS THE BIRTHS PER CYCLE, NOT THE PLAN'S PENDING COUNT.
+    --
+    -- The first build took X from `plan.lines`, and those only exist when a sale
+    -- is due RIGHT NOW -- so on a herd quietly breeding toward a full pen there
+    -- was no line, no order, and the column fell back to the verdict. The author
+    -- saw exactly that on a 48-head Angus barn.
+    --
+    -- A repeating order needs the STEADY-STATE figure: yield is 1:1 (11.9), so a
+    -- breeding cohort DOUBLES each cycle and holding the herd level means selling
+    -- the increase -- one animal per breeder, every cycle. That is a forward
+    -- instruction the player can set up once, which is what an order is; the
+    -- plan's pending count answers "what should I do today" and is already on the
+    -- barn page and the Animals tab. Different questions, so no second opinion.
+    --
+    --   X  breeders of this breed = calves per cycle
+    --   Y  `cycleMonths`, one birth per this many months
+    --   Z  `dueInMonths - 1`, the month BEFORE the calves land -- the room has to
+    --      exist by then, because a full pen destroys the births AND the gestation
+    --      that made them (11.5)
+    local bornBy, dueBy, cycleBy = {}, {}, {}
+    for _, c in ipairs((a ~= nil and a.clusters) or {}) do
+        if c.willBreed and c.name ~= nil then
+            bornBy[c.name] = (bornBy[c.name] or 0) + (c.count or 0)
+            -- SOONEST-DUE cohort sets the deadline, not an average: an average
+            -- would schedule the sale after some calves had already been lost.
+            if type(c.dueInMonths) == "number"
+               and (dueBy[c.name] == nil or c.dueInMonths < dueBy[c.name]) then
+                dueBy[c.name] = c.dueInMonths
+                if type(c.cycleMonths) == "number" and c.cycleMonths > 0 then
+                    cycleBy[c.name] = c.cycleMonths
+                end
+            end
+        end
+    end
+
+    -- THE ROTATING-HERD GUIDANCE, per breed (HusbandryRedux.rotationOf, shared with the
+    -- panel's sell order note so both judge an order against the same figures).
+    local rot = (HusbandryRedux ~= nil and HusbandryRedux.rotationOf ~= nil) and HusbandryRedux.rotationOf(a, b.placeable) or {}
+    -- ...and whether a PRODUCER herd is worth keeping at all, feed included (producerSaleFor)
+    local prodSale = (HusbandryRedux ~= nil and HusbandryRedux.producerSaleFor ~= nil)
+                     and HusbandryRedux.producerSaleFor(b.placeable, a) or nil
+    -- ...and the barn's own feed and profit advice, shared by every breed in it (actionsFor)
+    local barnActs = HerdInspectorPage.barnActions(self:barnPanel(b.placeable))
+
     for _, r in ipairs(rows) do
         r.barnUid  = b.uid
+        r.barnActions = barnActs
+        r.prodSale = prodSale ~= nil and prodSale[r.name] or nil
+        local e = rot[r.name]
+        if e ~= nil and e.sell ~= nil then
+            r.rotSell, r.rotEvery, r.rotStart = e.sell, e.cycle, e.start
+        end
         r.purpose  = AnimalHerdPolicy ~= nil and AnimalHerdPolicy.purposeOf(b.uid, r.name) or nil
+        -- WHAT THE PIGS TAB SHOWS: the player's choice, else the breed's default.
+        -- r.purpose stays the stored answer, so the Breeds tab is unchanged.
+        if AnimalHerdPolicy ~= nil and AnimalHerdPolicy.effectivePurpose ~= nil then
+            r.purposeShown, r.purposeDefaulted = AnimalHerdPolicy.effectivePurpose(b.uid, r.name)
+        end
+        r.sellNow  = bornBy[r.name]
+        r.everyMonths = cycleBy[r.name]
+        if dueBy[r.name] ~= nil then r.startIn = math.max(0, dueBy[r.name] - 1) end
     end
     table.sort(rows, function(x, y)
         if x.held ~= y.held then return x.held end
@@ -774,10 +1266,10 @@ function HerdInspectorPage:breedsOfType(placeable, typeIndex, typeName)
                                   tostring(typeName or typeIndex), #out,
                                   tostring(route or "NOTHING"))
         if route == nil or #out == 0 then
-            if AnimalRedux ~= nil and AnimalRedux.warn ~= nil then AnimalRedux.warn("%s", msg)
-            else print("[AnimalRedux] " .. msg) end
-        elseif AnimalRedux ~= nil and AnimalRedux.log ~= nil then
-            AnimalRedux.log("%s", msg)
+            if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then HusbandryRedux.warn("%s", msg)
+            else print("[HusbandryRedux] " .. msg) end
+        elseif HusbandryRedux ~= nil and HusbandryRedux.log ~= nil then
+            HusbandryRedux.log("%s", msg)
         end
     end
     return out
@@ -785,6 +1277,15 @@ end
 
 function HerdInspectorPage:rebuildRealtimeData()
     self:rebuild()
+    -- A TAB APPEARED OR VANISHED since the strip was drawn. Redraw it, and if the view
+    -- being shown is the one that vanished, move to a view that exists -- applyView
+    -- rebuilds for it, so nothing below needs to run a second time.
+    if self._tabsDirty then
+        self._tabsDirty = false
+        local moved = self:ensureViewValid()
+        self:initViewOption()
+        if moved then self:applyView(); return end
+    end
     self:updateSummary()
 end
 
@@ -805,7 +1306,7 @@ function HerdInspectorPage:updateSummary()
     -- configuration is one that rots unnoticed and fails the first time somebody needs it.
     local root = self.animalPanel
     if root == nil or AnimalPanel == nil or AnimalPanel.drawHusbandryPanel == nil then return end
-    local onBarn = (self:viewIndexSafe() == HerdInspectorPage.VIEW_BARN)
+    local onBarn = HerdInspectorPage.isBarnLayout(self:viewIndexSafe())
     local b = onBarn and (self.barns or {})[self.selectedBarn] or nil
 
     -- THE PANEL SHOWS ITSELF. drawHusbandryPanel calls setVisible(true) whenever
@@ -816,9 +1317,8 @@ function HerdInspectorPage:updateSummary()
     -- very function -- DR asks us for the data and hands it back to its renderer -- so going through
     -- DR to reach our own code was a round trip that also happened to require DR to exist.
     local data = nil
-    if b ~= nil and b.placeable ~= nil and AnimalRedux ~= nil and AnimalRedux.husbandryPanel ~= nil then
-        local ok, d = pcall(AnimalRedux.husbandryPanel, b.placeable)
-        if ok then data = d end
+    if b ~= nil and b.placeable ~= nil then
+        data = self:barnPanel(b.placeable)
     end
     -- THE PANEL FOLLOWS THIS PAGE'S PERIOD SELECTOR. The provider states profit per
     -- MONTH; `opts` is drawHusbandryPanel's own hook for a page that quotes rates in
@@ -833,6 +1333,40 @@ function HerdInspectorPage:updateSummary()
     if self.panelHeader ~= nil and self.panelHeader.setVisible ~= nil then
         pcall(self.panelHeader.setVisible, self.panelHeader, onBarn)
     end
+    self:updateFeedToggle(b)
+end
+
+---THE ADVANCED FEEDING SWITCH for the selected barn (author, 2026-09-14). Type tabs only (Pigs, Cows).
+--
+--   hidden   no DR, or AR's "Advanced animal feeder" is off (every barn is on DR's own
+--            rules, so there is nothing to choose)
+--   a note   DR installed but not feeding animals at all -- nothing feeds, whatever is set
+--   button   "Advanced feeding: On / Off" for this barn
+function HerdInspectorPage:updateFeedToggle(b)
+    local btn, note = self.feedToggle, self.feedToggleNote
+    local function vis(el, show)
+        if el ~= nil and el.setVisible ~= nil then pcall(el.setVisible, el, show) end
+    end
+    local state = (AnimalFeedPolicy ~= nil and AnimalFeedPolicy.toggleState ~= nil)
+                  and AnimalFeedPolicy.toggleState() or "HIDDEN"
+    local pigs = HerdInspectorPage.isTypeView(self:viewIndexSafe()) and b ~= nil
+    vis(note, pigs and state == "DR_OFF")
+    vis(btn, pigs and state == "AVAILABLE")
+    if btn ~= nil and pigs and state == "AVAILABLE" and btn.setText ~= nil then
+        btn.arBarnUid = b.uid
+        local on = AnimalFeedPolicy.enabled(b.uid)
+        pcall(btn.setText, btn, on and l10n("ar_hi_feed_on", "Advanced feeding: On")
+                                    or l10n("ar_hi_feed_off", "Advanced feeding: Off"))
+    end
+end
+
+---Flip the selected barn's advanced feeding. Takes effect on DR's next hourly pass.
+function HerdInspectorPage:onFeedToggle(...)
+    if AnimalFeedPolicy == nil or AnimalFeedPolicy.toggleState() ~= "AVAILABLE" then return end
+    local b = (self.barns or {})[self.selectedBarn]
+    if b == nil or b.uid == nil then return end
+    AnimalFeedPolicy.toggle(b.uid)
+    self:updateFeedToggle(b)
 end
 
 -- ---------------------------------------------------------------------------
@@ -840,7 +1374,7 @@ end
 -- ---------------------------------------------------------------------------
 function HerdInspectorPage:viewIndexSafe()
     local v = self.viewIndex
-    if type(v) ~= "number" or v < 1 or v > 3 then return HerdInspectorPage.VIEW_GROUPS end
+    if type(v) ~= "number" or v < 1 or v > HerdInspectorPage.VIEW_MAX then return HerdInspectorPage.VIEW_GROUPS end
     return v
 end
 
@@ -849,10 +1383,89 @@ end
 -- business, not its callers'.
 function HerdInspectorPage:initViewOption()
     if AnimalTabs == nil then return end
-    AnimalTabs.render(self, { l10n("ar_hi_view_groups", "HERD INSPECTOR"),
-                              l10n("ar_hi_view_barn",   "BARN INSPECTOR"),
-                              l10n("ar_hi_view_breeds", "BREEDS") },
-                      self:viewIndexSafe())
+    if self.hostMode ~= nil and self.hostMode == HerdInspectorPage.MODE_OVERVIEW then return self:initOverviewStrip() end
+    self:showViewSelector(false)
+    -- ONLY THE VIEWS WITH SOMETHING TO SHOW (author, 2026-09-24), so slot N is the Nth
+    -- VISIBLE view rather than a fixed one -- onTabN and stepPageTabBy both read the same
+    -- list, which is what keeps a click, a key press and the highlight in agreement.
+    local labels, active = {}, 0
+    for i, v in ipairs(self:tabViews()) do
+        local t = HerdInspectorPage.VIEW_TEXT[v]
+        labels[i] = t ~= nil and l10n(t[1], t[2]) or tostring(v)
+        if v == self:viewIndexSafe() then active = i end
+    end
+    AnimalTabs.render(self, labels, active)
+end
+
+-- ---- THE OVERVIEW PAGE ---------------------------------------------------------------------
+---DR's Overview tabs, as copies from its API (v15). Empty when DR cannot answer, which leaves the
+-- strip empty rather than wrong.
+local function overviewTabs()
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
+    if SD == nil or SD.API == nil or SD.API.overviewTabs == nil then return {} end
+    local ok, t = pcall(SD.API.overviewTabs)
+    return (ok and type(t) == "table") and t or {}
+end
+
+---Which Overview tab is ours. Found by OWNER, never assumed to be slot 2: another mod may
+-- register an Overview tab too.
+local function overviewOwnIndex(tabs)
+    local me = (HusbandryRedux ~= nil and HusbandryRedux.MOD_NAME) or "FS25_Husbandry_Redux"
+    for i, t in ipairs(tabs) do
+        if t.owner == me then return i end
+    end
+    return nil
+end
+
+local function goOverviewTab(i)
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
+    if SD == nil or SD.API == nil or SD.API.selectOverviewTab == nil then return false end
+    return SD.API.selectOverviewTab(i) == true
+end
+
+---THE HEADER STRIP ON THE OVERVIEW PAGE IS THE OVERVIEW'S. The player reached this page from a
+-- tab on DR's Overview, so the same strip has to be standing above it with our tab selected --
+-- otherwise the tab they clicked would appear to have vanished, and there would be no way back
+-- but the left list. The labels are DR's; the drawing is ours, since DR cannot paint into this
+-- layout and this layout must not borrow DR's elements (31.2).
+function HerdInspectorPage:initOverviewStrip()
+    local tabs = overviewTabs()
+    local labels = {}
+    for i, t in ipairs(tabs) do labels[i] = t.label end
+    AnimalTabs.render(self, labels, overviewOwnIndex(tabs) or 0)
+    self:showViewSelector(true)
+end
+
+---THE ANIMALS / BREEDS SELECTOR. Two buttons in the row under the strip, wearing the same base
+-- game tab profiles as the strip itself so the selected one reads the same way. Breeds is shown
+-- only once the farm has a barn, the rule the tabs have always followed.
+function HerdInspectorPage:showViewSelector(on)
+    local views = on and self:tabViews() or {}
+    local cur = self:viewIndexSafe()
+    local slots = { HerdInspectorPage.VIEW_GROUPS, HerdInspectorPage.VIEW_BREEDS }
+    for i, v in ipairs(slots) do
+        local btn, bg = self["arViewBtn" .. i], self["arViewBg" .. i]
+        local have = false
+        for _, w in ipairs(views) do if w == v then have = true end end
+        local live = have and v == cur
+        for _, el in ipairs({ bg, btn }) do
+            if el ~= nil then
+                if el.setVisible ~= nil then el:setVisible(have) end
+                if el.setSelected ~= nil then pcall(el.setSelected, el, live) end
+            end
+        end
+        if have and btn ~= nil and btn.setText ~= nil then
+            local t = HerdInspectorPage.VIEW_TEXT[v]
+            btn:setText(l10n(t[1], t[2]))
+        end
+    end
+end
+
+function HerdInspectorPage:onViewAnimals() return self:selectView(HerdInspectorPage.VIEW_GROUPS) end
+function HerdInspectorPage:onViewBreeds()
+    for _, v in ipairs(self:tabViews()) do
+        if v == HerdInspectorPage.VIEW_BREEDS then return self:selectView(v) end
+    end
 end
 
 ---A tab click. The two share one path because the only thing that differs is
@@ -864,9 +1477,67 @@ function HerdInspectorPage:selectView(i)
     self:applyView()
 end
 
-function HerdInspectorPage:onTab1() return self:selectView(HerdInspectorPage.VIEW_GROUPS) end
-function HerdInspectorPage:onTab2() return self:selectView(HerdInspectorPage.VIEW_BARN) end
-function HerdInspectorPage:onTab3() return self:selectView(HerdInspectorPage.VIEW_BREEDS) end
+---A AND D STEP THE VIEW TABS, wrapping at both ends.
+--
+-- THE CONTRACT DISTRIBUTION REDUX'S MENU CALLS (its API v14): the menu asks the CURRENT page,
+-- duck-typed, so this needs no registration and no version test -- an older DR simply never calls
+-- it. AR's own menu calls the same method from its own key handler, so the keys behave identically
+-- whichever menu the page is being shown in, which is the whole point of adding it.
+--
+-- Returns TRUE only when a tab actually moved. Returning false leaves the key unclaimed, so A and D
+-- never become keys that silently do nothing somewhere else in the menu.
+function HerdInspectorPage:stepPageTabBy(delta)
+    if type(delta) ~= "number" or delta == 0 then return false end
+    -- ON THE OVERVIEW PAGE A / D WALK THE OVERVIEW'S TABS, because that is the strip on screen;
+    -- the Animals / Breeds selector is a control inside the tab, not a tab of its own.
+    if self.hostMode ~= nil and self.hostMode == HerdInspectorPage.MODE_OVERVIEW then
+        local tabs = overviewTabs()
+        local n, cur = #tabs, overviewOwnIndex(tabs)
+        if n < 2 or cur == nil then return false end
+        local want = ((cur - 1 + delta) % n) + 1
+        if want == cur then return false end
+        return goOverviewTab(want)
+    end
+    -- THE VISIBLE TABS, not every view: A / D must never land on a tab the strip is not
+    -- showing, which would leave the highlight on nothing.
+    local views = self:tabViews()
+    local n = #views
+    if n < 2 then return false end
+    local cur = 1
+    for i, v in ipairs(views) do
+        if v == self:viewIndexSafe() then cur = i; break end
+    end
+    local want = ((cur - 1 + delta) % n) + 1
+    if want == cur then return false end
+    self:selectView(views[want])
+    return true
+end
+
+---The two arrow buttons. Same call the keys make, so a click and a key press cannot come to
+-- disagree about what "next" means.
+function HerdInspectorPage:onTabPrev() return self:stepPageTabBy(-1) end
+function HerdInspectorPage:onTabNext() return self:stepPageTabBy(1) end
+
+---A SLOT IS THE Nth VISIBLE VIEW, not a fixed one: which view sits in a slot depends on
+-- which animals the farm keeps. A slot past the end of the list does nothing.
+function HerdInspectorPage:onTabSlot(n)
+    if self.hostMode ~= nil and self.hostMode == HerdInspectorPage.MODE_OVERVIEW then
+        local tabs = overviewTabs()
+        if tabs[n] == nil or n == overviewOwnIndex(tabs) then return end
+        return goOverviewTab(n)
+    end
+    local v = self:tabViews()[n]
+    if v == nil then return end
+    return self:selectView(v)
+end
+function HerdInspectorPage:onTab1() return self:onTabSlot(1) end
+function HerdInspectorPage:onTab2() return self:onTabSlot(2) end
+function HerdInspectorPage:onTab3() return self:onTabSlot(3) end
+function HerdInspectorPage:onTab4() return self:onTabSlot(4) end
+function HerdInspectorPage:onTab5() return self:onTabSlot(5) end
+function HerdInspectorPage:onTab6() return self:onTabSlot(6) end
+function HerdInspectorPage:onTab7() return self:onTabSlot(7) end
+function HerdInspectorPage:onTab8() return self:onTabSlot(8) end
 
 -- `onViewChanged` LIVED HERE AND IS GONE with the selector it answered. Verified
 -- callerless before deleting rather than assumed (6.27): the XML no longer
@@ -903,7 +1574,8 @@ function HerdInspectorPage:onPeriodChanged(state)
     if type(state) ~= "number" and o ~= nil and o.getState ~= nil then state = o:getState() end
     if type(state) ~= "number" or state < 1 or state > #HerdInspectorPage.PERIODS then return end
     self.periodIndex = state
-    for _, id in ipairs({ "groupList", "barnGroupList", "inputList", "prodList", "breedList" }) do
+    for _, id in ipairs({ "groupList", "barnGroupList", "inputList", "madeList", "prodList", "breedList",
+                        "pigBreedList", "pigGroupList" }) do
         if self[id] ~= nil then self[id]:reloadData() end
     end
     self:updateSummary()
@@ -938,38 +1610,80 @@ end
 
 ---Is the Herd Adviser switched on? FAILS OPEN, so a build without AnimalSettings
 -- shows everything it always did.
+---Are the trading windows switched on? Same FAIL-OPEN rule as adviserOn, for the
+-- in-row buttons that open them.
+---PUT ONE ROW BUTTON JUST AFTER ANOTHER'S REAL WIDTH.
+--
+-- The buttons size themselves to their labels (ARRowButton), so a fixed x for the
+-- second one would either leave a gap or, with a longer translation of the first,
+-- overlap it. `position` and `size` are the same normalised units, so the maths is
+-- in those units and never in px (a literal px in setPosition is about a screenful,
+-- 5.81). setPosition, not move: it recomputes the anchor deltas first, so the new
+-- position actually applies (DR 5.87c / 5.91b). Only when it moved, so a repopulate
+-- costs nothing.
+function HerdInspectorPage.placeAfter(cell, firstName, secondName)
+    if cell == nil or cell.getAttribute == nil then return end
+    local a, b = cell:getAttribute(firstName), cell:getAttribute(secondName)
+    if a == nil or b == nil or b.setPosition == nil then return end
+    if type(a.position) ~= "table" or type(a.size) ~= "table" or type(b.position) ~= "table" then return end
+    local w = a.size[1]
+    if type(w) ~= "number" or w <= 0 or type(a.position[1]) ~= "number" then return end
+    local want = a.position[1] + w * 1.15            -- a gap of 15% of the first button's width
+    if type(b.position[1]) ~= "number" or math.abs(b.position[1] - want) > 1e-6 then
+        pcall(b.setPosition, b, want, b.position[2])
+    end
+end
+
+function HerdInspectorPage.tradingOn()
+    if AnimalSettings == nil or AnimalSettings.tradingEnabled == nil then return true end
+    return AnimalSettings.tradingEnabled()
+end
+function HerdInspectorPage.autoTraderOn()
+    if AnimalSettings == nil or AnimalSettings.autoTraderEnabled == nil then return true end
+    return AnimalSettings.autoTraderEnabled()
+end
+
 function HerdInspectorPage.adviserOn()
     if AnimalSettings == nil or AnimalSettings.herdAdviserEnabled == nil then return true end
     return AnimalSettings.herdAdviserEnabled()
 end
 
----The RECOMMENDATION header cell. Resolved by id, with getDescendantByName as the
--- fallback, and cached -- the tree does not change after load.
-function HerdInspectorPage.headerRec(self)
-    if self._ghRec ~= nil then return self._ghRec end
-    local e = self.ghRec
-    if e == nil and self.groupHeaderRow ~= nil and self.groupHeaderRow.getDescendantByName ~= nil then
-        local ok, found = pcall(self.groupHeaderRow.getDescendantByName, self.groupHeaderRow, "ghRec")
-        if ok then e = found end
-    end
-    self._ghRec = e
-    return e
-end
 
 ---Re-apply the view because a SETTING moved, not because the player changed view.
 -- A setting that shows or hides a column changes the shape of a table, which a
 -- repopulate cannot express -- the header is not part of the list.
 function HerdInspectorPage.refreshView()
-    local pg = HerdInspectorPage._page
-    if pg == nil or pg.applyView == nil then return end
-    pcall(pg.applyView, pg)
-    local l = pg.activeList ~= nil and pg:activeList() or nil
-    if l ~= nil and l.reloadData ~= nil then pcall(l.reloadData, l) end
+    for _, pg in ipairs(HerdInspectorPage.allPages()) do
+        if pg.applyView ~= nil then
+            pcall(pg.applyView, pg)
+            local l = pg.activeList ~= nil and pg:activeList() or nil
+            if l ~= nil and l.reloadData ~= nil then pcall(l.reloadData, l) end
+        end
+    end
+end
+
+---EVERY INSTANCE. There are two when DR hosts the Overview page, and a setting that moved has to
+-- reach both -- refreshing only the one in `_page` would leave the other showing a removed column.
+function HerdInspectorPage.allPages()
+    if type(HerdInspectorPage._pages) == "table" and #HerdInspectorPage._pages > 0 then
+        return HerdInspectorPage._pages
+    end
+    return { HerdInspectorPage._page }
+end
+
+---THE INSTANCE ON SCREEN, for a footer button shared by both. Falls back to `_page`.
+function HerdInspectorPage.livePage()
+    local menu = HerdInspectorPage._menu
+    local cur = menu ~= nil and menu.currentPage or nil
+    for _, pg in ipairs(HerdInspectorPage.allPages()) do
+        if pg == cur then return pg end
+    end
+    return HerdInspectorPage._page
 end
 
 function HerdInspectorPage:activeList()
     if self:viewIndexSafe() == HerdInspectorPage.VIEW_BREEDS then return self.breedList end
-    if self:viewIndexSafe() == HerdInspectorPage.VIEW_BARN then return self.barnList end
+    if HerdInspectorPage.isBarnLayout(self:viewIndexSafe()) then return self.barnList end
     return self.groupList
 end
 
@@ -985,24 +1699,32 @@ function HerdInspectorPage:updateTitle()
     if t == nil or t.setText == nil then return end
     -- viewIndexSafe, not the raw field: applyView below decides the BODY with it,
     -- and a heading resolved from a different value could name the other view.
-    local v = self:viewIndexSafe()
-    if v == HerdInspectorPage.VIEW_BREEDS then
-        t:setText(l10n("ar_hi_page_title_breeds", "ANIMAL REDUX - BREEDS"))
-    elseif v == HerdInspectorPage.VIEW_BARN then
-        t:setText(l10n("ar_hi_page_title_barn", "ANIMAL REDUX - BARN INSPECTOR"))
-    else
-        t:setText(l10n("ar_hi_page_title", "ANIMAL REDUX - HERD INSPECTOR"))
+    -- UNDER THE OVERVIEW THE HEADING IS THE OVERVIEW'S. The page stands in for one of that
+    -- page's tabs, so a different title would read as having left it.
+    if self.hostMode ~= nil and self.hostMode == HerdInspectorPage.MODE_OVERVIEW then
+        t:setText(l10n("ar_hi_page_title_overview", "Overview"))
+        return
     end
+    local v = self:viewIndexSafe()
+    local txt = HerdInspectorPage.VIEW_TEXT[v] or HerdInspectorPage.VIEW_TEXT[HerdInspectorPage.VIEW_GROUPS]
+    t:setText(l10n(txt[3], txt[4]))
 end
 
 function HerdInspectorPage:applyView()
     self:updateTitle()
+    if self.hostMode ~= nil and self.hostMode == HerdInspectorPage.MODE_OVERVIEW then self:showViewSelector(true) end
     local v = self:viewIndexSafe()
     local groups = (v == HerdInspectorPage.VIEW_GROUPS)
     local breeds = (v == HerdInspectorPage.VIEW_BREEDS)
     -- THE BARN LIST SERVES TWO VIEWS. Breeds belong to a barn, so that view needs
     -- the same left-hand chooser, but none of the BARN view's own panes.
-    local barn = (v == HerdInspectorPage.VIEW_BARN)
+    -- A TYPE VIEW IS THE BARN VIEW with a filtered list, so it takes the barn
+    -- layout wholesale; the filter itself lives in rebuild().
+    local barn = HerdInspectorPage.isBarnLayout(v)
+    -- THE PIGS TAB SWAPS ONE TABLE FOR TWO: breeds above, animals below, in the
+    -- same column the barn view's single animals table fills.
+    -- ...and so does the COWS tab: every type view takes this layout.
+    local pigs = HerdInspectorPage.isTypeView(v)
     local function vis(el, show)
         if el ~= nil and el.setVisible ~= nil then pcall(function() el:setVisible(show) end) end
     end
@@ -1012,27 +1734,27 @@ function HerdInspectorPage:applyView()
     -- MultiTextOption inside it. Hiding the parent hides the children.
     vis(self.groupHeaderRow, groups)
     vis(self.groupListBox,   groups)
-    -- THE RECOMMENDATION COLUMN follows the Herd Adviser setting. Hidden rather
-    -- than dashed: 204px of "-" advertises a column that has nothing to say, which
-    -- is the same call 5.33 made about a bunker's incoming table. It is the LAST
-    -- column, so hiding it costs no re-tiling -- nothing sits to its right.
-    -- The CELLS are hidden per row in populateCellForItemInSection; this is only
-    -- the header, which is not part of the list.
-    vis(HerdInspectorPage.headerRec(self), groups and HerdInspectorPage.adviserOn())
     -- the CONTAINER, not the option: hiding the MultiTextOption alone leaves its
     -- background box drawn behind nothing
     vis(self.filterBox,      groups)
-    vis(self.barnHeaderRow,     barn or breeds)
-    vis(self.barnListBox,       barn or breeds)
+    -- NOT on the Breeds view any more: it lists every breed on the farm (2026-09-29).
+    vis(self.barnHeaderRow,     barn)
+    vis(self.barnListBox,       barn)
     vis(self.breedHeaderRow,    breeds)
     vis(self.breedListBox,      breeds)
     -- the panel and its header are BOTH left to updateSummary, which runs after
     -- this and would overrule anything set here anyway
     
-    vis(self.bgHeaderRow,       barn)
-    vis(self.barnGroupListBox,  barn)
+    vis(self.bgHeaderRow,       barn and not pigs)
+    vis(self.barnGroupListBox,  barn and not pigs)
+    vis(self.pigBreedHeaderRow, pigs)
+    vis(self.pigBreedListBox,   pigs)
+    vis(self.pigGroupHeaderRow, pigs)
+    vis(self.pigGroupListBox,   pigs)
     vis(self.inputHeaderRow,    barn)
     vis(self.inputListBox,      barn)
+    vis(self.madeHeaderRow,     barn)
+    vis(self.madeListBox,       barn)
     vis(self.prodHeaderRow,     barn)
     vis(self.prodListBox,       barn)
 
@@ -1041,9 +1763,11 @@ function HerdInspectorPage:applyView()
     if groups then
         self._realtimeLists = { "groupList" }
     elseif breeds then
-        self._realtimeLists = { "barnList", "breedList" }
+        self._realtimeLists = { "breedList" }
+    elseif pigs then
+        self._realtimeLists = { "barnList", "pigBreedList", "pigGroupList", "inputList", "madeList", "prodList" }
     else
-        self._realtimeLists = { "barnList", "barnGroupList", "inputList", "prodList" }
+        self._realtimeLists = { "barnList", "barnGroupList", "inputList", "madeList", "prodList" }
     end
 
     self:applyButtonSet(breeds)
@@ -1053,8 +1777,16 @@ function HerdInspectorPage:applyView()
     if l ~= nil then l:reloadData() end
     -- the panes that are NOT the active list still need reloading, or they keep
     -- whatever the previous barn left in them
-    for _, id in ipairs({ "groupList", "barnGroupList", "inputList", "prodList", "breedList" }) do
+    for _, id in ipairs({ "groupList", "barnGroupList", "inputList", "madeList", "prodList", "breedList",
+                        "pigBreedList", "pigGroupList" }) do
         if self[id] ~= nil and self[id] ~= l then self[id]:reloadData() end
+    end
+    -- THE HIGHLIGHT MUST NAME THE SAME BARN AS THE PANES. Switching into or out of
+    -- a type view changes which barn sits at each row, and a SmoothList keeps its
+    -- own selected index across a reload -- so without this the list could
+    -- highlight one barn while the panel and tables describe another (DR 5.77a).
+    if barn and self.barnList ~= nil and #(self.barns or {}) > 0 then
+        pcall(self.barnList.setSelectedItem, self.barnList, 1, self.selectedBarn, true)
     end
     self:updateSummary()
 end
@@ -1073,19 +1805,50 @@ function HerdInspectorPage:onGuiSetupFinished()
     end
 end
 
+---EVERY PAGE OPENS ON CYCLE (author's call, 2026-09-09), matching DR's tabs.
+--
+-- The selector kept whatever the player last chose for the life of the session, because
+-- it is initialised once when the GUI is built. Opening the menu is the moment you want
+-- "what is happening right now", so it resets to the shortest period and a deliberate
+-- choice lasts as long as you are looking at it.
+--
+-- The WIDGET is re-synced with it: setting the index alone would leave the selector
+-- reading MONTH while every figure under it, and the profit headline's own label,
+-- reported per cycle.
+function HerdInspectorPage:resetPeriodToCycle()
+    self.periodIndex = 1
+    local o = self.periodOption
+    if o ~= nil and o.setState ~= nil then pcall(o.setState, o, 1) end
+end
+
 function HerdInspectorPage:onFrameOpen()
     HerdInspectorPage:superClass().onFrameOpen(self)
+    self:resetPeriodToCycle()
+    -- WHICH TABS EXIST is decided before the strip is drawn, and the view is moved onto one
+    -- that does -- the first open has none chosen yet, and a view can have lost its last barn
+    -- while the menu was shut.
+    self:refreshPresence()
+    -- THE OVERVIEW PAGE OPENS ON BREEDS (author, 2026-09-29; it was Animals from 2026-09-27), the
+    -- same way every page opens on cycle: arriving is the moment to be shown the default, and a
+    -- choice lasts while you look. A farm with no barn has no Breeds view, and ensureViewValid
+    -- below moves it onto Animals.
+    if self.hostMode ~= nil and self.hostMode == HerdInspectorPage.MODE_OVERVIEW then self.viewIndex = HerdInspectorPage.VIEW_BREEDS end
+    self:ensureViewValid()
     self:initViewOption()
     self:initPeriodOption()
     self:applyView()
+    self._tabsDirty = false
 end
 
 function HerdInspectorPage:getNumberOfItemsInSection(list, section)
     if list == self.groupList then return #(self.groupRows or {}) end
     if list == self.barnList then return #(self.barns or {}) end
-    if list == self.barnGroupList then return #(self.barnGroupRows or {}) end
-    if list == self.breedList then return #(self.breedRows or {}) end
+    -- THE PIGS TAB'S TWO TABLES READ THE SAME ROWS as the barn view's animals
+    -- table and the Breeds view: they are a different LAYOUT of one data set.
+    if list == self.barnGroupList or list == self.pigGroupList then return #(self.barnGroupRows or {}) end
+    if list == self.breedList or list == self.pigBreedList then return #(self.breedRows or {}) end
     if list == self.inputList then return #(self.inputRows or {}) end
+    if list == self.madeList then return #(self.madeRows or {}) end
     if list == self.prodList then return #(self.prodRows or {}) end
     return 0
 end
@@ -1135,22 +1898,30 @@ end
 function HerdInspectorPage:clickedBreed(...)
     for i = 1, select("#", ...) do
         local e = select(i, ...)
-        if type(e) == "table" and e.arBreed ~= nil then return e.arBreed, e.arBarnUid end
+        if type(e) == "table" and e.arBreed ~= nil then return e.arBreed, e.arBarnUid, e end
     end
     return nil, nil
 end
 
 function HerdInspectorPage:stepBreedPurpose(back, ...)
     if AnimalHerdPolicy == nil then return end
-    local breed, uid = self:clickedBreed(...)
+    local breed, uid, el = self:clickedBreed(...)
     if breed == nil or uid == nil then return end
-    -- BACKWARDS IS THE FORWARD RING WALKED, never a second hand-written order: a
-    -- reverse list is free to drift the next time a state is added, and these
-    -- cannot (DR 5.64 draws the same conclusion about the mode ring).
-    local steps = back and (#AnimalHerdPolicy.RING - 1) or 1
-    for _ = 1, steps do AnimalHerdPolicy.cyclePurpose(uid, breed) end
+    if el ~= nil and el.arToggle and AnimalHerdPolicy.togglePurpose ~= nil then
+        -- THE PIGS TAB SHOWS A DEFAULT, so its arrows FLIP between the two answers
+        -- rather than stepping the ring through UNSET, which would look identical
+        -- to the default and read as a press that did nothing.
+        AnimalHerdPolicy.togglePurpose(uid, breed)
+    else
+        -- BACKWARDS IS THE FORWARD RING WALKED, never a second hand-written order: a
+        -- reverse list is free to drift the next time a state is added, and these
+        -- cannot (DR 5.64 draws the same conclusion about the mode ring).
+        local steps = back and (#AnimalHerdPolicy.RING - 1) or 1
+        for _ = 1, steps do AnimalHerdPolicy.cyclePurpose(uid, breed) end
+    end
     self:rebuild()
     if self.breedList ~= nil then self.breedList:reloadData() end
+    if self.pigBreedList ~= nil then self.pigBreedList:reloadData() end
 end
 
 ---SWAP THE FOOTER FOR THIS VIEW.
@@ -1173,54 +1944,50 @@ end
 local function buttonEnabled(kind)
     if AnimalSettings == nil then return true end
     if kind == "trade" then return AnimalSettings.tradingEnabled() end
-    -- THE AUTO TRADER OWNS FOUR BUTTONS, NOT ONE. Author, 2026-09-04: the setting
-    -- should take the two RULES buttons with it. That is right and the first
-    -- version of this was wrong to keep them: sell rules are constraints on the
-    -- engine that runs a standing SELL order (29.15a), and buy rules are a
-    -- placeholder for guards on a standing BUY order -- so with the auto trader
-    -- off they configure something that cannot run, and the orders they would have
-    -- governed have just been deleted.
-    if kind == "schedule" or kind == "sellRules" or kind == "buyRules" then
-        return AnimalSettings.autoTraderEnabled()
-    end
+    -- THE AUTO TRADER OWNS ONE BUTTON AGAIN. It used to own four, because the two
+    -- RULES buttons configured constraints on the standing orders this setting
+    -- deletes -- and those buttons are gone (39a), so the set it governs is back to
+    -- the single window that opens a standing order.
+    if kind == "schedule" then return AnimalSettings.autoTraderEnabled() end
     return true
 end
 
----The footer set for a view, with any switched-off entry left out.
+---The footer set, with any switched-off entry left out.
 -- BACK IS ALWAYS FIRST AND ALWAYS PRESENT: a page you cannot leave is worse than
 -- a page with no buttons.
-local function buildButtonSet(want)
+--
+-- ONE SET FOR ALL THREE VIEWS, since 39a. The BREEDS view used to swap in a pair
+-- of RULES buttons instead; author, 2026-09-10: *"remove the buy rule and sell
+-- rule dialogues and button and replace them with Buy/Sell and Autotrader buttons
+-- just like on the barn and animals tabs."* Trading is trading wherever the player
+-- is standing, and the view already decides the SCOPE of the window that opens
+-- (openTrade / openSchedule) rather than which button opens it.
+local function buildButtonSet(noTrade)
     local b = HerdInspectorPage._buttons
     if b == nil then return nil end
     local out = { b.back }
-    if want == "rules" then
-        -- WITH THE AUTO TRADER OFF THIS VIEW HAS ONLY Back, and that is intended
-        -- rather than a stranded tab: the breed PURPOSE arrows live in the rows,
-        -- so setting what a barn keeps each breed for still works and the verdict
-        -- columns still read. It is the standing-order RULES that go.
-        if buttonEnabled("sellRules") then out[#out + 1] = b.sellRules end
-        if buttonEnabled("buyRules")  then out[#out + 1] = b.buyRules end
-    else
-        if buttonEnabled("trade")    then out[#out + 1] = b.trade end
-        if buttonEnabled("schedule") then out[#out + 1] = b.schedule end
-    end
+    -- NOT ON THE PIGS TAB: Buy and Sell live in each animal row there (2026-09-13).
+    -- STRICTLY true: an older caller handing in a view NAME must not strip the button.
+    if buttonEnabled("trade") and noTrade ~= true then out[#out + 1] = b.trade end
+    if buttonEnabled("schedule") then out[#out + 1] = b.schedule end
     return out
 end
 
+---`breeds` IS ACCEPTED AND IGNORED. Every caller already computes which view is
+-- showing and the set no longer varies with it; keeping the parameter costs
+-- nothing and keeps applyView / refreshButtons unchanged.
 function HerdInspectorPage:applyButtonSet(breeds)
     if HerdInspectorPage._buttons == nil or self.setMenuButtonInfo == nil then return end
-    local want = breeds and "rules" or "trade"
-    -- THE SETTINGS ARE PART OF THE IDENTITY OF A SET, not just the view. Keying
-    -- the "nothing changed" test on the view alone is what would leave a removed
-    -- button on screen until the player switched views and back.
-    -- EVERY SETTING THAT CAN CHANGE THE SET IS IN THE SIGNATURE. The auto trader now
-    -- reaches BOTH views, so a signature carrying only the trading view's answers
-    -- would leave the rules buttons on screen until the player switched views.
-    local sig = want .. ":" .. tostring(buttonEnabled("trade")) .. ":"
-                     .. tostring(buttonEnabled("schedule"))
+    -- THE SETTINGS ARE THE WHOLE IDENTITY OF THE SET now that the view is not.
+    -- Keying the "nothing changed" test on anything less is what would leave a
+    -- removed button on screen until the player switched views and back.
+    -- ...plus whether this is the Pigs tab, whose Buy / Sell moved into the rows.
+    local noTrade = (self.viewIndexSafe ~= nil and HerdInspectorPage.isTypeView(self:viewIndexSafe()))
+    local sig = tostring(buttonEnabled("trade")) .. ":"
+                .. tostring(buttonEnabled("schedule")) .. ":" .. tostring(noTrade)
     if self._buttonSet == sig then return end
     self._buttonSet = sig
-    self:setMenuButtonInfo(buildButtonSet(want))
+    self:setMenuButtonInfo(buildButtonSet(noTrade))
     HerdInspectorPage.repaintFooter(self)
 end
 
@@ -1248,48 +2015,139 @@ end
 ---Rebuild the footer of the live page because a setting moved. Called from
 -- AnimalSettings; a no-op when the tab has never been opened.
 function HerdInspectorPage.refreshButtons()
-    local pg = HerdInspectorPage._page
-    if pg == nil or pg.applyButtonSet == nil then return end
-    pg._buttonSet = nil                       -- force it through the signature test
-    local breeds = (pg.viewIndexSafe ~= nil)
-                   and (pg:viewIndexSafe() == HerdInspectorPage.VIEW_BREEDS) or false
-    pcall(pg.applyButtonSet, pg, breeds)
+    for _, pg in ipairs(HerdInspectorPage.allPages()) do
+        if pg.applyButtonSet ~= nil then
+            pg._buttonSet = nil                   -- force it through the signature test
+            pcall(pg.applyButtonSet, pg)
+        end
+    end
 end
 
----THE SELECTED BREED, for the two rules buttons. Nil when the list is empty or
--- nothing is picked, which is what keeps a button from acting on nothing.
-function HerdInspectorPage:selectedBreedRow()
-    local rows = self.breedRows or {}
-    local i = self.breedRowIndex or 1
-    return rows[i]
-end
-
-function HerdInspectorPage:openSellRules()
-    if AnimalSettings ~= nil and not AnimalSettings.autoTraderEnabled() then return end
-    local r = self:selectedBreedRow()
-    local b = (self.barns or {})[self.selectedBarn]
-    if r == nil or b == nil or AnimalRulesDialog == nil then return end
-    AnimalRulesDialog.show(b.uid, r.name, b.name)
-end
-
----BUY RULES ARE NOT BUILT YET, and the button says so rather than opening an empty
--- window. Buying is ASYMMETRIC to selling (28.x): sell rules are constraints on an
--- engine that decides, while a buy order is a literal instruction, so buy "rules"
--- are GUARDS -- and the one worth having, a cash floor, is farm-wide rather than
--- per barn-breed. What belongs in this window is still an open question.
-function HerdInspectorPage:openBuyRules()
-    if AnimalSettings ~= nil and not AnimalSettings.autoTraderEnabled() then return end
-    if g_gui == nil or InfoDialog == nil then return end
-    InfoDialog.show(l10n("ar_hi_buyRulesTodo",
-        "Buy rules are not built yet. Buying has no engine choosing for it, so its rules are guards rather than policy - and the one worth having, a cash floor, belongs to the farm rather than to one breed."))
-end
+-- SELL RULES AND BUY RULES ARE GONE (39a), and the two handlers that opened them
+-- with it. Sell rules were disconnected from the sale itself first (39): a sell
+-- order takes the oldest animals in rank order and nothing else, so a window
+-- configuring constraints on a decision nothing makes any more would have been a
+-- setting the player could change with no effect -- worse than no window. Buy
+-- rules never had an engine at all; that button only ever explained itself.
+--
+-- selectedBreedRow went with them: only openSellRules ever asked which breed row
+-- was picked. The PURPOSE arrows act on their own row and read it themselves.
 
 function HerdInspectorPage:onBreedNext(...) return self:stepBreedPurpose(false, ...) end
 function HerdInspectorPage:onBreedPrev(...) return self:stepBreedPurpose(true, ...) end
 
----A click on the row itself changes nothing but the selection: the purpose is the
--- arrows' business, so a stray click cannot alter a setting.
-function HerdInspectorPage:onBreedClick() end
+-- ---------------------------------------------------------------------------
+-- IN-ROW BUY / SELL / AUTO TRADER (the Pigs tab, 2026-09-13).
+--
+-- One callback is cloned into every row, so what a button acts on is what populate
+-- left ON THE ELEMENT (DR 5.64), stored as a barn uid plus a cluster or a breed --
+-- never a row index, because these lists re-enumerate on a timer. The varargs are
+-- scanned for that element rather than a position being assumed, for the reason
+-- clickedBreed gives.
+function HerdInspectorPage:clickedRowButton(...)
+    for i = 1, select("#", ...) do
+        local e = select(i, ...)
+        if type(e) == "table" and e.arBarnUid ~= nil then return e end
+    end
+    return nil
+end
+
+function HerdInspectorPage:barnByUid(uid)
+    if uid == nil then return nil end
+    for _, b in ipairs(self.barns or {}) do
+        if b.uid == uid then return b end
+    end
+    return nil
+end
+
+---BUY: the barn's dealer catalogue, on the BUY tab. The group row it was pressed
+-- on has no bearing on what the dealer sells, so nothing is preselected.
+function HerdInspectorPage:onGroupBuy(...)
+    if not HerdInspectorPage.tradingOn() then return end
+    if AnimalTradeDialog == nil or AnimalTradeDialog.show == nil or AnimalTrade == nil then return end
+    local e = self:clickedRowButton(...)
+    local b = e ~= nil and self:barnByUid(e.arBarnUid) or nil
+    if b == nil then return end
+    AnimalTradeDialog.show({ b }, true, nil, AnimalTrade.MODE_BUY)
+end
+
+---SELL: the SELL tab with this very group selected and in view. Passed as the
+-- CLUSTER OBJECT, the identity openTrade already relies on.
+function HerdInspectorPage:onGroupSell(...)
+    if not HerdInspectorPage.tradingOn() then return end
+    if AnimalTradeDialog == nil or AnimalTradeDialog.show == nil or AnimalTrade == nil then return end
+    local e = self:clickedRowButton(...)
+    local b = e ~= nil and self:barnByUid(e.arBarnUid) or nil
+    if b == nil then return end
+    AnimalTradeDialog.show({ b }, true, e.arCluster, AnimalTrade.MODE_SELL)
+end
+
+---AUTO TRADER, narrowed to the breed whose row it was pressed on.
+function HerdInspectorPage:onBreedTrader(...)
+    if not HerdInspectorPage.autoTraderOn() then return end
+    if AnimalBuyScheduleDialog == nil or AnimalBuyScheduleDialog.show == nil then return end
+    local e = self:clickedRowButton(...)
+    local b = e ~= nil and self:barnByUid(e.arBarnUid) or nil
+    if b == nil or e.arBreed == nil then return end
+    AnimalBuyScheduleDialog.show({ b }, true, nil, e.arBreed)
+end
+
+---A SINGLE click only selects. A DOUBLE click on the Breeds view opens that barn's page -- the
+-- animal-type tab it belongs to, with the barn selected (author, 2026-09-29).
+--
+-- SmoothList has no double-click event, so it is built from onClick, which fires on EVERY click
+-- including one on the row already selected (DR 6.29). Matched on the row's IDENTITY (barn + breed),
+-- never its index: the list re-enumerates on a timer and rows can move between the two clicks
+-- (DR 5.37).
+HerdInspectorPage.DOUBLE_CLICK_SEC = 0.4
+function HerdInspectorPage:onBreedClick(list, section, index)
+    if list ~= self.breedList then return end
+    local r = (self.breedRows or {})[index or 0]
+    if r == nil or r.barnUid == nil then return end
+    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    if now == nil then return end
+    local key = tostring(r.barnUid) .. "|" .. tostring(r.name)
+    local last = self._lastBreedClick
+    if last ~= nil and last.key == key and now - last.t <= HerdInspectorPage.DOUBLE_CLICK_SEC then
+        self._lastBreedClick = nil
+        self:openBarnPage(r.barnUid, r.barnType)
+        return
+    end
+    self._lastBreedClick = { key = key, t = now }
+end
+
+---The animal-type view a barn of `typeName` sits on: the first named type that takes it, else Other.
+function HerdInspectorPage.typeViewFor(typeName)
+    for _, v in ipairs(HerdInspectorPage.TAB_ORDER) do
+        if HerdInspectorPage.isTypeView(v) and HerdInspectorPage.viewTakesType(v, typeName) then return v end
+    end
+    return nil
+end
+
+---OPEN ONE BARN ON ITS ANIMAL-TYPE TAB. Under DR that tab lives on the OTHER instance (the Herd
+-- Inspector's own left row, MODE_TYPES), so the menu goes there; standalone it is this same page, so
+-- the view simply switches. The target opens through onFrameOpen, which re-resolves selectedUid to a
+-- row and highlights it, so setting the uid and the view first is all it needs.
+function HerdInspectorPage:openBarnPage(barnUid, typeName)
+    local v = HerdInspectorPage.typeViewFor(typeName)
+    if v == nil then return false end
+    local target = self
+    if self.hostMode == HerdInspectorPage.MODE_OVERVIEW then
+        for _, pg in ipairs(HerdInspectorPage.allPages()) do
+            if pg ~= self and pg.hostMode == HerdInspectorPage.MODE_TYPES then target = pg end
+        end
+        if target == self then return false end
+    end
+    target.selectedUid = barnUid
+    if target == self then
+        self:selectView(v)
+        return true
+    end
+    target.viewIndex = v
+    local menu = HerdInspectorPage._menu
+    if menu == nil or menu.goToPage == nil then return false end
+    return (pcall(menu.goToPage, menu, target))
+end
 
 -- WHY A BREED GOT ITS VERDICT. The engine hands back a code; the wording is ours,
 -- because that module is pure. Mapped EXPLICITLY rather than built from the code,
@@ -1308,7 +2166,29 @@ local ADVICE_REASON_KEY = {
 -- noOutput says something quite different from calvesWorthMore though both read
 -- "Breeders".
 function HerdInspectorPage:adviceText(r)
-    if r == nil or r.use == nil then return "-" end
+    if r == nil then return "-" end
+
+    -- A SELL ORDER WHERE THERE IS ONE TO GIVE, phrased the way an order is
+    -- defined so it can be typed straight in rather than translated first
+    -- (author, 2026-09-10). It comes FIRST because it is an instruction, while
+    -- the verdict below it is a classification.
+    --
+    -- Y IS OMITTED WHERE NOTHING IS BREEDING. A cohort grown out and sold once
+    -- has no cadence -- the author's pigs read "too young" at 4 months -- and
+    -- inventing an interval would promise a repeat sale the herd cannot supply.
+    if (r.sellNow or 0) > 0 then
+        local x = r.sellNow
+        if r.everyMonths ~= nil and r.startIn ~= nil then
+            return string.format(l10n("ar_hi_order_every",
+                "Sell %d every %d mo, from %d mo"), x, r.everyMonths, r.startIn)
+        end
+        if r.startIn ~= nil then
+            return string.format(l10n("ar_hi_order_once", "Sell %d in %d mo"), x, r.startIn)
+        end
+        return string.format(l10n("ar_hi_order_now", "Sell %d now"), x)
+    end
+
+    if r.use == nil then return "-" end
     local word = (r.use == "NURSERY") and l10n("ar_hi_purpose_breeder", "Breeders")
                                       or  l10n("ar_hi_purpose_producer", "Producers")
     local key = ADVICE_REASON_KEY[r.reason or ""]
@@ -1316,6 +2196,257 @@ function HerdInspectorPage:adviceText(r)
     -- SHORTER NOW THAT THE FIGURES ARE BESIDE IT. The reason names WHICH side won;
     -- the two columns say by how much, which is what the sentence alone could not.
     return string.format(l10n("ar_hi_adviceWhy", "%s - %s"), word, l10n(key, ""))
+end
+
+---THE TYPE TABS' ADVICE CELL (Pigs 2026-09-14, Cows 2026-09-24). Exactly one of two answers:
+--   "Keep animals"  a PRODUCER herd whose output earns more than selling its
+--                   offspring (the slot verdict is not NURSERY), or a herd with
+--                   no rotation to give (no price curve or breeding cycle)
+--   "Sell A animals, every B months, starting in C months"  everything else: the
+--                   ROTATING-HERD order (option A) -- A the cohort the pen holds per
+--                   breeding cycle, B the cycle, C when the first sale falls due.
+--   ON THE COWS TAB the cohort age is the best SALE age, not peak (rotationOf with the
+--   building): a dairy herd whose milk outweighs its decline comes back `keep` and reads
+--   "Keep animals"; a beef herd rotates near peak. Pigs never decline, so theirs is unchanged.
+--   Not "one per breeder" (the first version): a sell order takes the oldest, who
+--   ARE the breeders, and a full pen has no room for their births, so that advice
+--   would have sold the whole herd.
+---THE SALE ANSWER FOR ONE BREED: (text, due) or nil when it should simply be kept.
+-- `due` is true when the sale is for NOW, which is what ranks it first in actionsFor.
+-- The words are exactly the ones this table has always shown; pigAdviceText wraps it.
+function HerdInspectorPage:saleAdvice(r)
+    if r == nil or not r.held then return nil end
+    local PRODUCER = (AnimalHerdPolicy ~= nil and AnimalHerdPolicy.PRODUCER) or "PRODUCER"
+    local purpose = r.purposeShown or r.purpose
+    -- COUNTS ARE PLURALISED WHOLE ("1 month", "4 months"), each from its own key, so a
+    -- translation can inflect them however its language needs.
+    local function count(n, one, oneFallback, many, manyFallback)
+        if n == 1 then return string.format(l10n(one, oneFallback), n) end
+        return string.format(l10n(many, manyFallback), n)
+    end
+    local function months(n)
+        return count(n, "ar_hi_unit_month", "%d month", "ar_hi_unit_months", "%d months")
+    end
+    if purpose == PRODUCER and r.use ~= "NURSERY" then
+        -- KEEP ONLY WHILE THEY PAY FOR THEMSELVES, feed included (author, 2026-09-24). The
+        -- breed verdict that gets us here leaves feed out -- it cancels between adults and
+        -- young stock in the same slot -- so it cannot say whether to keep the herd at all.
+        -- producerSaleFor can. With no answer (no price curve, a collaborator missing) the
+        -- old "Keep animals" stands rather than inventing a sale.
+        local ps = r.prodSale
+        if ps == nil or ps.keep then return nil end
+        if ps.sellNow or (ps.monthsUntil or 0) <= 0 then
+            return l10n("ar_hi_prod_sellNow", "Sell now - they cost more than they earn"), true
+        end
+        return string.format(l10n("ar_hi_prod_sellAt", "Sell at %s (in %s)"),
+                             months(ps.bestAge), months(ps.monthsUntil)), false
+    end
+    -- THE ROTATING-HERD ORDER (option A), worked out in buildBreedRows
+    local a, b, c = r.rotSell, r.rotEvery, r.rotStart
+    if (a or 0) <= 0 or b == nil then return nil end
+    c = c or 0
+    local animals = count(a, "ar_hi_unit_animal", "%d animal", "ar_hi_unit_animals", "%d animals")
+    local every = count(b, "ar_hi_unit_month", "%d month", "ar_hi_unit_months", "%d months")
+    if c <= 0 then
+        return string.format(l10n("ar_hi_pig_sellNow", "Sell %s, every %s, starting now"), animals, every), true
+    end
+    return string.format(l10n("ar_hi_pig_sell", "Sell %s, every %s, starting in %s"), animals, every,
+                         count(c, "ar_hi_unit_month", "%d month", "ar_hi_unit_months", "%d months")), false
+end
+
+---The type tabs' old single-sentence advice, kept as a thin wrapper so its wording and its
+-- harness checks stay exactly as they were.
+function HerdInspectorPage:pigAdviceText(r)
+    if r == nil or not r.held then return "-" end
+    local t = self:saleAdvice(r)
+    return t or l10n("ar_hi_pig_keep", "Keep animals")
+end
+
+-- ---- BREED ACTIONS (2026-09-28) ----------------------------------------------------------
+-- Author's option A: ONE action per breed row, the most urgent, with "(+N more)" when there
+-- are others, and every action listed when the cell is hovered. Three sources, in the order
+-- the author agreed, then two lower ones that used to have columns of their own:
+--   1 SALE DUE NOW     -- saleAdvice, per breed
+--   2 LOSING MONEY     -- the barn's Herd Value advice when its tone is "bad"
+--   3 FEED             -- the barn's feed advice when it is anything but "good"
+--   4 SALE SCHEDULED   -- saleAdvice, due later
+--   5 PURPOSE          -- the breed verdict, when it disagrees with the purpose in force
+-- FEED AND PROFIT ARE BARN FACTS (one ration per pen, one profit forecast) and are shown on
+-- EVERY breed of the barn, author's call: most barns hold a single breed anyway.
+-- A breed the barn does not hold has nothing to act on and reads "-".
+local ACTION_TONE = { sale = "bad", loss = "bad", later = "warn", purpose = "warn" }
+
+---The barn's panel data, memoised briefly: the breed rows and the panel both need it on the
+-- same refresh, and husbandryPanel walks the whole herd.
+function HerdInspectorPage:barnPanel(placeable)
+    if placeable == nil or HusbandryRedux == nil or HusbandryRedux.husbandryPanel == nil then return nil end
+    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    self._panelMemo = self._panelMemo or setmetatable({}, { __mode = "k" })
+    local m = self._panelMemo[placeable]
+    if m ~= nil and now ~= nil and m.t ~= nil and (now - m.t) < 1.0 then return m.d end
+    local ok, d = pcall(HusbandryRedux.husbandryPanel, placeable)
+    d = ok and d or nil
+    self._panelMemo[placeable] = { t = now, d = d }
+    return d
+end
+
+---The barn-level actions shared by every breed in it: { loss = {text,tone}|nil, feed = ... }.
+function HerdInspectorPage.barnActions(panel)
+    local out = {}
+    if type(panel) ~= "table" then return out end
+    local va = type(panel.value) == "table" and panel.value.advice or nil
+    if type(va) == "table" and type(va.text) == "string" and va.tone == "bad" then
+        out.loss = { text = va.text, tone = "bad" }
+    end
+    local fa = type(panel.feed) == "table" and panel.feed.advice or nil
+    if type(fa) == "table" and type(fa.text) == "string" and fa.tone ~= "good" then
+        out.feed = { text = fa.text, tone = (fa.tone == "bad") and "bad" or "warn" }
+    end
+    return out
+end
+
+---Every action for one breed row, most urgent first: { { kind, text, tone }, ... }.
+function HerdInspectorPage:actionsFor(r)
+    local list = {}
+    if r == nil or not r.held then return list end
+    local function add(kind, text, tone)
+        if type(text) == "string" and text ~= "" and text ~= "-" then
+            list[#list + 1] = { kind = kind, text = text, tone = tone or ACTION_TONE[kind] }
+        end
+    end
+    local saleText, due = self:saleAdvice(r)
+    local ba = r.barnActions or {}
+    if saleText ~= nil and due then add("sale", saleText) end
+    if ba.loss ~= nil then add("loss", ba.loss.text, ba.loss.tone) end
+    if ba.feed ~= nil then add("feed", ba.feed.text, ba.feed.tone) end
+    if saleText ~= nil and not due then add("later", saleText) end
+    -- THE VERDICT ONLY WHEN IT DISAGREES with the purpose in force: agreeing with the player
+    -- is not an action, and the As producer / As breeder columns carry the numbers either way.
+    if r.use ~= nil and AnimalHerdPolicy ~= nil then
+        local want = (r.use == "NURSERY") and AnimalHerdPolicy.BREEDER or AnimalHerdPolicy.PRODUCER
+        local shown = r.purposeShown or r.purpose
+        if shown ~= nil and want ~= shown then
+            add("purpose", string.format(l10n("ar_act_purpose", "Better kept as %s"), self:purposeText(want)))
+        end
+    end
+    return list
+end
+
+---The cell text for a row: the headline action with "(+N more)", or Keep, or "-".
+-- Returns text, tone, and the full list (for the hover box).
+function HerdInspectorPage:actionHeadline(r)
+    if r == nil or not r.held then return "-", "mute", {} end
+    local list = self:actionsFor(r)
+    if #list == 0 then return l10n("ar_hi_pig_keep", "Keep animals"), nil, list end
+    local text = list[1].text
+    if #list > 1 then
+        text = text .. " " .. string.format(l10n("ar_act_more", "(+%d more)"), #list - 1)
+    end
+    return text, list[1].tone, list
+end
+
+-- ---- THE HOVER BOX -----------------------------------------------------------------------
+-- Husbandry Redux's own, because it must work without Distribution Redux. Immediate mode like
+-- DR's (DR 5.108): an element carrying `arTipLines` answers a hover, and the page draws the box
+-- in its draw(). The registry is WEAK-KEYED so a recycled list cell cannot keep a stale list,
+-- and a hover only counts on an element that is visible all the way up, so a page that is not
+-- on screen can never answer.
+HerdInspectorPage._tipEls = setmetatable({}, { __mode = "k" })
+HerdInspectorPage.TIP_DELAY = 0.25
+
+function HerdInspectorPage.setTipLines(el, lines)
+    if el == nil then return end
+    if type(lines) ~= "table" or #lines == 0 then
+        el.arTipLines = nil
+        HerdInspectorPage._tipEls[el] = nil
+        return
+    end
+    el.arTipLines = lines
+    HerdInspectorPage._tipEls[el] = true
+end
+
+local function tipVisible(el)
+    local e = el
+    while e ~= nil do
+        if e.visible == false then return false end
+        e = e.parent
+    end
+    return true
+end
+
+function HerdInspectorPage.tipUnder(mx, my)
+    if mx == nil or my == nil then return nil end
+    for el in pairs(HerdInspectorPage._tipEls) do
+        local p, z = el.absPosition, el.absSize
+        if el.arTipLines ~= nil and p ~= nil and z ~= nil and tipVisible(el)
+           and mx >= p[1] and mx <= p[1] + z[1] and my >= p[2] and my <= p[2] + z[2] then
+            return el.arTipLines
+        end
+    end
+    return nil
+end
+
+function HerdInspectorPage:mouseEvent(posX, posY, isDown, isUp, button, eventUsed)
+    self._mx, self._my = posX, posY
+    return HerdInspectorPage:superClass().mouseEvent(self, posX, posY, isDown, isUp, button, eventUsed)
+end
+
+function HerdInspectorPage:update(dt)
+    HerdInspectorPage:superClass().update(self, dt)
+    local lines = HerdInspectorPage.tipUnder(self._mx, self._my)
+    if lines == nil then self._tip = nil; return end
+    if self._tip ~= nil and self._tip.lines == lines then
+        self._tip.t = self._tip.t + (dt or 0) / 1000
+    else
+        self._tip = { lines = lines, t = 0 }
+    end
+end
+
+function HerdInspectorPage:draw(...)
+    HerdInspectorPage:superClass().draw(self, ...)
+    local t = self._tip
+    if t == nil or t.t < HerdInspectorPage.TIP_DELAY then return end
+    pcall(HerdInspectorPage.renderTip, self._mx, self._my, t.lines)
+end
+
+---The breed action list is showing: the cut-text box stays out of its way (TextTip.lua).
+function HerdInspectorPage:hasOwnTooltip() return self._tip ~= nil end
+
+function HerdInspectorPage:onFrameClose()
+    self._tip = nil
+    HerdInspectorPage:superClass().onFrameClose(self)
+end
+
+---Black box, thin green border, one line per entry; nudged back inside the screen.
+function HerdInspectorPage.renderTip(mx, my, lines)
+    if renderText == nil or drawFilledRect == nil or mx == nil then return end
+    if new2DLayer ~= nil then new2DLayer() end
+    local size = (getCorrectTextSize ~= nil) and getCorrectTextSize(0.013) or 0.013
+    local gap = size * 0.35
+    local w = 0
+    for _, l in ipairs(lines) do
+        local lw = (getTextWidth ~= nil) and getTextWidth(size, l) or (#l * size * 0.55)
+        if lw > w then w = lw end
+    end
+    local padX, padY = 0.008, 0.008
+    local boxW = w + 2 * padX
+    local boxH = #lines * size + (#lines - 1) * gap + 2 * padY
+    local bx_, by_ = 2 * (g_pixelSizeX or 0.0005), 2 * (g_pixelSizeY or 0.0009)
+    local bx, by = mx + 0.005, my + 0.013
+    if bx + boxW + bx_ > 0.99 then bx = 0.99 - boxW - bx_ end
+    if bx - bx_ < 0.01 then bx = 0.01 + bx_ end
+    if by + boxH + by_ > 0.98 then by = my - boxH - 0.012 end
+    if by - by_ < 0 then by = by_ end
+    drawFilledRect(bx - bx_, by - by_, boxW + 2 * bx_, boxH + 2 * by_, 0.22323, 0.40724, 0.00368, 1)
+    drawFilledRect(bx, by, boxW, boxH, 0, 0, 0, 1)
+    setTextColor(1, 1, 1, 1)
+    if RenderText ~= nil then setTextAlignment(RenderText.ALIGN_LEFT) end
+    setTextBold(false)
+    -- the FIRST line is at the TOP: screen y runs upward, so it is drawn highest
+    for i, l in ipairs(lines) do
+        local y = by + boxH - padY - i * size - (i - 1) * gap + size * 0.12
+        renderText(bx + padX, y, size, l)
+    end
 end
 
 ---THE WORD FOR A PURPOSE, or a dash when nobody has said. Unset is a STATE and
@@ -1326,8 +2457,21 @@ function HerdInspectorPage:purposeText(p)
     return "-"
 end
 
+---Show or hide a set of named cells together. Set on EVERY populate, because
+-- SmoothList recycles cells and a hidden button would otherwise reappear on the next
+-- row to use that slot (DR 5.7 / 5.57).
+local function showCells(cell, names, on)
+    if cell == nil or cell.getAttribute == nil then return end
+    for _, n in ipairs(names) do
+        local e = cell:getAttribute(n)
+        if e ~= nil and e.setVisible ~= nil then e:setVisible(on == true) end
+    end
+end
+
 function HerdInspectorPage:populateCellForItemInSection(list, section, index, cell)
-    if list == self.breedList then
+    -- The Pigs tab's breed table carries a SUBSET of these cells (no earnings,
+    -- keeps, calf or terms); setc and setIcon skip a cell the template lacks.
+    if list == self.breedList or list == self.pigBreedList then
         local r = (self.breedRows or {})[index]
         if r == nil then return end
         setIcon(cell, "brIcon", (AnimalHerdData ~= nil and r.held)
@@ -1336,13 +2480,35 @@ function HerdInspectorPage:populateCellForItemInSection(list, section, index, ce
         -- purpose can be set before the animals arrive, and it should not read as
         -- part of the herd while it is empty.
         local tone = r.held and nil or "mute"
+        local pig = (list == self.pigBreedList)
         setc(cell, "brName",    tostring(r.name), tone)
+        setc(cell, "brBarn",    r.barnName or "-", "mute")   -- Breeds view only; absent on the type tabs
+        setIcon(cell, "brBarnIcon", (AnimalHerdData ~= nil and r.barnPlaceable ~= nil)
+                and AnimalHerdData.barnIconFile(r.barnPlaceable) or nil)
         setc(cell, "brCount",   r.held and string.format("%d", r.count or 0) or "-", tone)
-        setc(cell, "brPurpose", self:purposeText(r.purpose))
+        -- THE CURRENT PURPOSE, the same answer on both tables (2026-09-28): it is SET on
+        -- the animal-type tabs now, and the Breeds view only reports it. So both show the
+        -- effective purpose -- the default where nobody has chosen -- rather than the
+        -- Breeds view keeping a dash for UNSET that no control there could change.
+        local shown = r.purposeShown
+        if shown == nil then shown = r.purpose end
+        setc(cell, "brPurpose", self:purposeText(shown))
         -- THE ENGINE'S VERDICT IS ADVICE AND SITS IN ITS OWN COLUMN, so it can be
         -- told apart from what the player chose (29.2). It says nothing about a
         -- breed with no animals to judge.
-        setc(cell, "brAdvice", self:adviceText(r), "mute")
+        -- ONE ACTION, THE MOST URGENT, on both tables (2026-09-28), with every action in the
+        -- hover box. Set on every populate: cells are recycled, so a stale list must be cleared.
+        local aText, aTone, aList = self:actionHeadline(r)
+        setc(cell, "brAdvice", aText, aTone)
+        local adv = cell.getAttribute ~= nil and cell:getAttribute("brAdvice") or nil
+        if adv ~= nil then
+            local lines = nil
+            if #aList > 1 then
+                lines = {}
+                for k, act in ipairs(aList) do lines[k] = string.format("%d. %s", k, act.text) end
+            end
+            HerdInspectorPage.setTipLines(adv, lines)
+        end
         -- A ZERO THAT IS REALLY AN ABSENCE reads as a dash: nothing here could be
         -- priced, so "0" would claim a measurement nobody made (DR 5.46c).
         -- SCALED TO THE PERIOD SELECTOR, like every other rate on this page. The
@@ -1379,11 +2545,16 @@ function HerdInspectorPage:populateCellForItemInSection(list, section, index, ce
         -- captured at populate can point at another breed by the time it is used.
         for _, n in ipairs({ "brPrev", "brNext" }) do
             local e = cell:getAttribute(n)
-            if e ~= nil then e.arBreed, e.arBarnUid = r.name, r.barnUid end
+            if e ~= nil then e.arBreed, e.arBarnUid, e.arToggle = r.name, r.barnUid, pig end
         end
+        -- AUTO TRADER FOR THIS BREED (Pigs tab only; the Breeds template has no such
+        -- cell, so this is a no-op there).
+        local tr = cell:getAttribute("brTrader")
+        if tr ~= nil then tr.arBreed, tr.arBarnUid = r.name, r.barnUid end
+        showCells(cell, { "brTrader" }, HerdInspectorPage.autoTraderOn())
         return
     end
-    if list == self.groupList or list == self.barnGroupList then
+    if list == self.groupList or list == self.barnGroupList or list == self.pigGroupList then
         local src = (list == self.groupList) and self.groupRows or self.barnGroupRows
         local r = (src or {})[index]
         if r == nil then return end
@@ -1407,15 +2578,14 @@ function HerdInspectorPage:populateCellForItemInSection(list, section, index, ce
                  chg > 0.5 and "good" or (chg < -0.5 and "bad" or "mute"))
         end
         setc(cell, "giTotal",  money(r.total))
-        -- HIDDEN WITH ITS HEADER when the Herd Adviser is off. Cells are RECYCLED
-        -- by SmoothList, so this must be set on BOTH paths or a row reusing a slot
-        -- keeps the last one's visibility (the trap DR 5.7 and 5.57 both hit).
-        local recCell = cell.getAttribute ~= nil and cell:getAttribute("giRec") or nil
-        if recCell ~= nil and recCell.setVisible ~= nil then
-            recCell:setVisible(HerdInspectorPage.adviserOn())
+        -- BUY / SELL IN THE ROW (Pigs tab only; the other templates have no such
+        -- cells). Each button carries the group it belongs to.
+        for _, n in ipairs({ "giBuy", "giSell" }) do
+            local e = cell.getAttribute ~= nil and cell:getAttribute(n) or nil
+            if e ~= nil then e.arCluster, e.arBarnUid = r.cluster, r.barnUid end
         end
-        local rTxt, rTone = HerdInspectorPage.recommendationText(r.rec)
-        setc(cell, "giRec", rTxt, rTone)
+        showCells(cell, { "giBuy", "giSell" }, HerdInspectorPage.tradingOn())
+        HerdInspectorPage.placeAfter(cell, "giBuy", "giSell")
         return
     end
 
@@ -1450,11 +2620,51 @@ function HerdInspectorPage:populateCellForItemInSection(list, section, index, ce
         local k = self:hourScale()
         local needs, cost, actual = scaled(r.needs, k), scaled(r.cost, k), scaled(r.actual, k)
         setc(cell, "inNeeds", needs ~= nil and vol(needs) or "-", needs == nil and "mute" or nil)
+
+        -- USED -- what is actually being EATEN this hour, which is the column the
+        -- author asked for: "so the player can actually see what's being used".
+        --
+        -- AND IT IS WHERE GRAZING BECOMES VISIBLE. feedCostPerHour returns `eaten`
+        -- and `charged` separately, and `charged = eaten x trough / available` --
+        -- so on a grazing pen `eaten` is the full ration while `charged` is only
+        -- the bought share. The grazed remainder is FREE and always was (the cost
+        -- column has never billed it), but nothing on any screen said so, which is
+        -- what made a correct profit figure look wrong. Coloured GOOD when part of
+        -- it is grazed, so a free ration reads as a good thing rather than as a
+        -- number that fails to add up against the cost beside it.
+        local used = scaled(r.used, k)
+        local grazed = nil
+        if used ~= nil and r.charged ~= nil then
+            local ch = scaled(r.charged, k) or 0
+            if used - ch > 0.01 then grazed = used - ch end
+        end
+        setc(cell, "inUsed", used ~= nil and vol(used) or "-",
+             (used == nil and "mute") or (grazed ~= nil and "good") or nil)
+
         setc(cell, "inCost",  cost ~= nil and money(cost) or "-", cost == nil and "mute" or nil)
         -- A REAL ZERO, not a dash: this product is genuinely costing nothing
         -- right now, which is different from not knowing what it costs.
         setc(cell, "inActual", actual ~= nil and money(actual) or "-",
              (actual == nil and "mute") or ((actual or 0) > 0 and "good" or "mute"))
+        return
+    end
+
+    -- THE PRODUCED TABLE reads like the outputs table below it, because it IS an
+    -- output -- of the robot, or of the meadow. Its VALUE column is what the feed
+    -- would have cost to buy and is deliberately absent from the barn's running
+    -- cost: the ingredients that made the mix are already charged in INPUTS, and
+    -- grazing was never bought at all.
+    if list == self.madeList then
+        local r = (self.madeRows or {})[index]
+        if r == nil then return end
+        setIcon(cell, "fillIcon", AnimalHerdData.fillIconFile(r.product))
+        setc(cell, "mdProduct", ftTitle(r.product))
+        setc(cell, "mdGroup",   r.group, "mute")
+        local k = self:hourScale()
+        setc(cell, "mdHeld", r.held ~= nil and vol(r.held) or "-", r.held == nil and "mute" or nil)
+        local rate, val = scaled(r.rate, k), scaled(r.value, k)
+        setc(cell, "mdRate", vol(rate or 0), (rate or 0) <= 0 and "mute" or nil)
+        setc(cell, "mdValue", val ~= nil and money(val) or "-", val == nil and "mute" or nil)
         return
     end
 
@@ -1488,7 +2698,7 @@ function HerdInspectorPage:onListSelectionChanged(list, section, index)
     if list == self.groupList then self.groupRowIndex = index; return end
     -- REMEMBERED, because the two rules buttons act on the SELECTED breed and the
     -- list is otherwise selection-agnostic.
-    if list == self.breedList then self.breedRowIndex = index; return end
+    if list == self.breedList or list == self.pigBreedList then self.breedRowIndex = index; return end
     if list ~= self.barnList then return end
     self.selectedBarn = index
     local b = (self.barns or {})[index]
@@ -1525,8 +2735,8 @@ end
 --
 -- THE CONTEXT IS THE WHOLE POINT of this being ours rather than a shortcut to the
 -- base game's screen:
---   * BARN view   -> that barn alone, and the dialog hides its barn selector,
---                    because there is then nothing to choose;
+--   * BARN or BREEDS view -> that barn alone, and the dialog hides its barn
+--                    selector, because there is then nothing to choose;
 --   * GROUPS view -> every barn, defaulted to the SELECTED ROW's barn and to that
 --                    row's group, so the thing the player was looking at is already
 --                    the thing the dialog is about.
@@ -1534,6 +2744,34 @@ end
 -- The group is passed as the CLUSTER OBJECT, not a name or an index: two groups of
 -- the same animal at different ages are routine, and a name match would land on
 -- whichever came first (the identity rule 5.37 and DR 6.29 both rest on).
+---IS EXACTLY ONE BARN IN VIEW? Both windows below scope themselves on this, and
+-- it is TWO views, not one: BREEDS shares the barn list with BARN, because a
+-- purpose is per (barn, breed) and the barn has to be chosen before the question
+-- means anything. So a player trading from the breeds tab is trading at the barn
+-- whose breeds they are reading, and the dialog hides its barn selector exactly as
+-- it does on the barn tab. GROUPS is the only view that spans the farm.
+--
+-- WRITTEN ONCE rather than in both windows: they already had the same test with
+-- the same reasoning in two comments, and 39a had to widen it in both.
+function HerdInspectorPage:onSingleBarn()
+    local v = self:viewIndexSafe()
+    -- BREEDS SPANS THE FARM since 2026-09-29, so it trades like GROUPS: every barn, with the
+    -- selected row's barn defaulted.
+    return HerdInspectorPage.isBarnLayout(v)
+end
+
+---The barn uid of the row the player has selected on a farm-wide view (GROUPS or BREEDS), and
+-- the cluster when that row is a group. nil when nothing is selected.
+function HerdInspectorPage:selectedRowBarn()
+    if self:viewIndexSafe() == HerdInspectorPage.VIEW_BREEDS then
+        local r = (self.breedRows or {})[self.breedRowIndex or 0]
+        return r ~= nil and r.barnUid or nil, nil
+    end
+    local r = (self.groupRows or {})[self.groupRowIndex or 0]
+    if r == nil then return nil, nil end
+    return r.barnUid, r.cluster
+end
+
 function HerdInspectorPage:openTrade()
     -- DEFENCE IN DEPTH. The button is the only way here, so this should be
     -- unreachable with trading off -- but a footer that has not been rebuilt yet
@@ -1541,7 +2779,7 @@ function HerdInspectorPage:openTrade()
     -- feature the player switched off is worse than a button that does nothing.
     if AnimalSettings ~= nil and not AnimalSettings.tradingEnabled() then return end
     if AnimalTradeDialog == nil or AnimalTradeDialog.show == nil then return end
-    local onBarn = (self:viewIndexSafe() == HerdInspectorPage.VIEW_BARN)
+    local onBarn = self:onSingleBarn()
     local list, cluster = self.barns or {}, nil
 
     if onBarn then
@@ -1549,10 +2787,10 @@ function HerdInspectorPage:openTrade()
         if b == nil then return end
         list = { b }
     else
-        local r = (self.groupRows or {})[self.groupRowIndex or 0]
-        if r ~= nil then
+        local rowUid, rowCluster = self:selectedRowBarn()
+        if rowUid ~= nil then
             for i, b in ipairs(self.barns or {}) do
-                if b.uid == r.barnUid then
+                if b.uid == rowUid then
                     -- reorder so the row's barn is the DEFAULT without removing the
                     -- others: the player may still want to trade elsewhere
                     list = {}
@@ -1563,24 +2801,25 @@ function HerdInspectorPage:openTrade()
                     break
                 end
             end
-            cluster = r.cluster
+            cluster = rowCluster
         end
     end
     AnimalTradeDialog.show(list, onBarn, cluster, AnimalTrade.MODE_SELL)
 end
 
 ---THE STANDING-ORDER WINDOW, context sensitive the same way openTrade is: from the
--- BARN view that barn alone with the selector hidden, from GROUPS every barn with
--- the selected row's barn defaulted.
+-- BARN or BREEDS view that barn alone with the selector hidden, from GROUPS every
+-- barn with the selected row's barn defaulted.
 --
--- IT SHARES openTrade's CONTEXT RULE BUT NOT ITS ROW PREFERENCE. A sell row names a
+-- IT SHARES openTrade's CONTEXT RULE (onSingleBarn, so BARN and BREEDS alike)
+-- BUT NOT ITS ROW PREFERENCE. A sell row names a
 -- CLUSTER the farm already owns, which means nothing to a buy schedule -- the thing
 -- being chosen there is a DEALER row, and offering a preselection derived from the
 -- herd would point at the wrong list entirely.
 function HerdInspectorPage:openSchedule()
     if AnimalSettings ~= nil and not AnimalSettings.autoTraderEnabled() then return end
     if AnimalBuyScheduleDialog == nil or AnimalBuyScheduleDialog.show == nil then return end
-    local onBarn = (self:viewIndexSafe() == HerdInspectorPage.VIEW_BARN)
+    local onBarn = self:onSingleBarn()
     local list = self.barns or {}
 
     if onBarn then
@@ -1588,10 +2827,10 @@ function HerdInspectorPage:openSchedule()
         if b == nil then return end
         list = { b }
     else
-        local r = (self.groupRows or {})[self.groupRowIndex or 0]
-        if r ~= nil then
+        local rowUid = self:selectedRowBarn()
+        if rowUid ~= nil then
             for i, b in ipairs(self.barns or {}) do
-                if b.uid == r.barnUid then
+                if b.uid == rowUid then
                     list = { b }
                     for j, other in ipairs(self.barns) do
                         if j ~= i then list[#list + 1] = other end
@@ -1614,8 +2853,8 @@ end
 -- added to AR's own menu. The page's own code is identical either way -- it only ever calls
 -- onGuiSetupFinished and onFrameOpen on its super, and both bases provide them.
 function HerdInspectorPage.install(menu)
-    local SD  = AnimalRedux ~= nil and AnimalRedux.DR or nil
-    local env = AnimalRedux ~= nil and AnimalRedux.DR_ENV or nil
+    local SD  = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
+    local env = HusbandryRedux ~= nil and HusbandryRedux.DR_ENV or nil
 
     -- PREFER DR'S BASE WHEN DR IS THERE. Not for its own sake, but because DR's menu hosts the page
     -- and a frame whose class does not match the menu's expectations is the kind of mismatch DR 5.66
@@ -1636,10 +2875,10 @@ function HerdInspectorPage.install(menu)
         -- one name is how a paging element and a tab strip end up disagreeing
         self.pageName = "HERDINSPECTOR_PAGE"
         self.barns, self.selectedBarn = {}, 1
-        -- OPENS ON THE BARN VIEW (author's call): it is the one carrying the panel,
-        -- the three tables and the trade button, so it is where a player arrives
-        -- wanting to do something rather than to survey.
-        self.viewIndex, self.filterIndex = HerdInspectorPage.VIEW_BARN, 1
+        -- NO VIEW YET: ensureViewValid picks one on the first open -- the first ANIMAL tab,
+        -- which carries the panel and the tables the retired Barn Inspector did, so a player
+        -- still arrives where they can act rather than survey (the original reason).
+        self.viewIndex, self.filterIndex = nil, 1
         return self
     end
 
@@ -1654,14 +2893,14 @@ function HerdInspectorPage.install(menu)
     --
     -- It used to be loaded by AnimalBuyScheduleDialog.register, which runs BELOW
     -- this: a dialog was simply the first thing that happened to need them. The
-    -- call is guarded on AnimalRedux._profilesLoaded, so both sites are safe and
+    -- call is guarded on HusbandryRedux._profilesLoaded, so both sites are safe and
     -- whichever runs first wins.
     if AnimalBuyScheduleDialog ~= nil and AnimalBuyScheduleDialog.loadProfiles ~= nil then
         pcall(AnimalBuyScheduleDialog.loadProfiles)
     end
 
     local page = HerdInspectorPage.new()
-    local pageXml = AnimalRedux.MOD_DIR .. "gui/HerdInspectorPage.xml"
+    local pageXml = HusbandryRedux.MOD_DIR .. "gui/HerdInspectorPage.xml"
     if standalone then
         -- THE SAME THING DR's loadMenuPage DOES, done here because there is no DR to do it.
         -- g_gui:loadGui with a frame instance registers it under `guiName` -- and that name has to
@@ -1693,23 +2932,26 @@ function HerdInspectorPage.install(menu)
              text = (g_i18n ~= nil and g_i18n:getText("button_back")) or "Back",
              callback = function() if g_gui ~= nil then g_gui:changeScreen(nil) end end,
              showWhenPaused = true }
-    -- BUY / SELL, on both views. The dialog is registered here rather than at load
+    -- BUY / SELL, on every view. The dialog is registered here rather than at load
     -- because g_gui must exist and DR's profiles must already be in it -- this page
     -- has both by construction, being installed into DR's own menu.
+    --
+    -- AnimalRulesDialog IS NO LONGER REGISTERED (39a) and its sourceFile is out of
+    -- modDesc, so the window does not load at all rather than loading and being
+    -- unreachable. Its files are kept in the tree: the rules ENGINE they configured
+    -- may come back as auto-sell, and 39 kept the stored `cfg` for save
+    -- compatibility for the same reason.
     if AnimalTradeDialog ~= nil and AnimalTradeDialog.register ~= nil then
         pcall(AnimalTradeDialog.register)
     end
     if AnimalBuyScheduleDialog ~= nil and AnimalBuyScheduleDialog.register ~= nil then
         pcall(AnimalBuyScheduleDialog.register)
     end
-    if AnimalRulesDialog ~= nil and AnimalRulesDialog.register ~= nil then
-        pcall(AnimalRulesDialog.register)
-    end
     local trade = {
         inputAction = InputAction.MENU_EXTRA_1,
         text = l10n("ar_hi_btn_trade", "Buy / Sell"),
         callback = function()
-            local pg = HerdInspectorPage._page
+            local pg = HerdInspectorPage.livePage()
             if pg ~= nil then pg:openTrade() end
         end,
         showWhenPaused = true,
@@ -1721,50 +2963,23 @@ function HerdInspectorPage.install(menu)
         inputAction = InputAction.MENU_EXTRA_2,
         text = l10n("ar_hi_btn_schedule", "Auto Trader"),
         callback = function()
-            local pg = HerdInspectorPage._page
+            local pg = HerdInspectorPage.livePage()
             if pg ~= nil then pg:openSchedule() end
         end,
         showWhenPaused = true,
     }
-    -- THE RULES BUTTONS, which stand in place of the trading pair on the BREEDS
-    -- view. Author, 2026-09-02: *"remove autotrader and buy/sell from the breeds
-    -- tab, the only options here should be sell rules and buy rules... the buy and
-    -- sell should only be through the barn view."*
-    --
-    -- THE SAME TWO INPUT ACTIONS. MENU_EXTRA_1 and EXTRA_2 are the only spare
-    -- footer actions in the game (5.64), so a page cannot have four buttons -- it
-    -- can only have two at a time, and which two is the view's business.
-    local sellRules = {
-        inputAction = InputAction.MENU_EXTRA_1,
-        text = l10n("ar_hi_btn_sellRules", "Sell Rules"),
-        callback = function()
-            local pg = HerdInspectorPage._page
-            if pg ~= nil then pg:openSellRules() end
-        end,
-        showWhenPaused = true,
-    }
-    local buyRules = {
-        inputAction = InputAction.MENU_EXTRA_2,
-        text = l10n("ar_hi_btn_buyRules", "Buy Rules"),
-        callback = function()
-            local pg = HerdInspectorPage._page
-            if pg ~= nil then pg:openBuyRules() end
-        end,
-        showWhenPaused = true,
-    }
-    -- THE FIVE DEFINITIONS, not two fixed sets. Which of them a view shows is
-    -- decided in buildButtonSet, per call, because AnimalSettings can switch the
-    -- trading pair off while this page is open -- and a set frozen at install
-    -- could never learn that.
+    -- THREE DEFINITIONS, not a fixed set. Which of them show is decided in
+    -- buildButtonSet, per call, because AnimalSettings can switch the trading pair
+    -- off while this page is open -- and a set frozen at install could never learn
+    -- that. The two RULES buttons that used to stand here for the BREEDS view are
+    -- gone (39a); every view now carries this same pair.
     HerdInspectorPage._buttons = {
         back      = back,
         trade     = trade,
         schedule  = schedule,
-        sellRules = sellRules,
-        buyRules  = buyRules,
     }
     HerdInspectorPage._menu = menu
-    local buttons = buildButtonSet("trade")
+    local buttons = buildButtonSet()
     -- TWO ICONS, BECAUSE THE TAB IS TWO VIEWS. The animals slice is the page's
     -- subject and carries the tab; the buildings slice -- DR's own Silos tab icon
     -- -- rides in the corner for the BARN view. It used to wear the STATISTICS
@@ -1797,10 +3012,61 @@ function HerdInspectorPage.install(menu)
                                 function() return true end,
                                 buttons,
                                 "gui.icon_construction_buildings",
-                                (AnimalRedux.MOD_DIR or "") .. "gui/icon_herdInspector.png")
+                                (HusbandryRedux.MOD_DIR or "") .. "gui/icon_herdInspector.dds")
     end
     if not ok then return false, "addMenuPage refused" end
 
     HerdInspectorPage._page = page
+    HerdInspectorPage._pages = { page }
+    if not standalone then
+        local okO, why = HerdInspectorPage.installOverviewPage(menu, SD, pageXml, buttons)
+        if okO then
+            page.hostMode = HerdInspectorPage.MODE_TYPES
+        elseif HusbandryRedux ~= nil and HusbandryRedux.log ~= nil then
+            HusbandryRedux.log("Animals / Breeds stay on the Herd Inspector: %s", tostring(why))
+        end
+    end
+    return true
+end
+
+---THE OVERVIEW'S HUSBANDRY REDUX TAB, as a real page (DR API v15).
+--
+-- A SECOND INSTANCE OF THIS CLASS, from the same XML, in MODE_OVERVIEW. Not a new class: the
+-- Animals and Breeds views are 2,600 lines of this one, and a copy is the 6.18 trap. The two
+-- instances share nothing but the class -- each has its own element tree, lists and view.
+--
+-- REGISTERED WITH THE OVERVIEW BEFORE addMenuPage, so the page is never a left row of its own:
+-- DR drops a page an Overview tab points at from the left list and shows it as the Overview's.
+-- The registration REPLACES the placeholder tab HusbandryRedux registered at mission load (a
+-- re-registration by the same mod replaces), so the tab keeps its slot.
+--
+-- ANY FAILURE UNDOES ITSELF and the Herd Inspector keeps every view, which is the layout before
+-- this: an older DR, a refused page, or a load error all end with nothing lost.
+function HerdInspectorPage.installOverviewPage(menu, SD, pageXml, buttons)
+    if SD == nil or SD.API == nil or SD.API.selectOverviewTab == nil or SD.API.overviewTabs == nil
+       or SD.API.registerOverviewTab == nil then
+        return false, "DR's API is older than v15"
+    end
+    local page = HerdInspectorPage.new()
+    page.pageName = "HERDINSPECTOR_OVERVIEW_PAGE"
+    page.hostMode = HerdInspectorPage.MODE_OVERVIEW
+    page.viewIndex = HerdInspectorPage.VIEW_BREEDS
+    if not SD.API.loadMenuPage(page, "herdInspectorOverviewPage", pageXml) then
+        return false, "overview page XML failed to load"
+    end
+    local label = l10n("ar_overview_tab", "HUSBANDRY REDUX")
+    local okR, res = pcall(SD.API.registerOverviewTab, HusbandryRedux.MOD_NAME, label, { page = page })
+    if not (okR and res) then return false, "registerOverviewTab refused the page" end
+    local okA, added = pcall(SD.API.addMenuPage, menu, page, nil, "gui.icon_ingameMenu_statistics",
+                             l10n("ar_hi_page_title_overview", "Overview"),
+                             function() return true end, buttons)
+    if not (okA and added) then
+        -- PUT THE PLACEHOLDER BACK rather than leave a tab pointing at a page the menu refused.
+        pcall(SD.API.registerOverviewTab, HusbandryRedux.MOD_NAME, label,
+              { placeholder = l10n("ar_overview_placeholder", "Under Construction") })
+        return false, "addMenuPage refused the overview page"
+    end
+    HerdInspectorPage._pages[#HerdInspectorPage._pages + 1] = page
+    HerdInspectorPage._overviewPage = page
     return true
 end

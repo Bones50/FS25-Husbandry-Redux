@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalBuyScheduleDialog.lua  (Animal Redux) -- THE AUTO TRADER
+-- AnimalBuyScheduleDialog.lua  (Husbandry Redux) -- THE AUTO TRADER
 --
 -- Three modes over one set of elements:
 --   BUY ORDERS   buy N of a dealer row every E months for F months
@@ -18,10 +18,8 @@
 -- AnimalSellPolicy / AnimalSellRules, harnessed at 145 + 80 + 140 checks. This
 -- file chooses, displays and calls.
 --
--- NOTHING SELLS ON A TIMER YET. `AnimalSellPolicy.isAutoLive()` is false: the
--- executor has never sold an animal unattended, which is exactly where the buy
--- commit stood on 2026-09-01. "Sell now" is the one thing that moves an animal,
--- and the note says so rather than leaving it to be discovered as a fault.
+-- A SELL ORDER SELLS ON ITS SCHEDULE, like a buy order buys on its schedule
+-- (AnimalSellSchedule.runDue, 2026-09-14).
 --
 -- ELEMENTS ARE SWAPPED BY VISIBILITY AND TEXT, never repositioned (DR 5.37).
 -- The six right-hand slots are generic; `slotSpec` says what slot i means in the
@@ -84,7 +82,7 @@ local NOTE_KEY = {
 }
 
 local function l10n(key, fallback)
-    if AnimalRedux ~= nil and AnimalRedux.l10n ~= nil then return AnimalRedux.l10n(key, fallback) end
+    if HusbandryRedux ~= nil and HusbandryRedux.l10n ~= nil then return HusbandryRedux.l10n(key, fallback) end
     return fallback
 end
 
@@ -245,12 +243,17 @@ function AnimalBuyScheduleDialog:forMonths()
     return runs * every
 end
 
-function AnimalBuyScheduleDialog.show(barns, lockBarn, mode)
+---`breed` (a subtype NAME, optional) narrows the dialog to that one breed: the
+-- Pigs tab's per-breed Auto Trader button. nil opens it on the whole barn, as the
+-- footer button always has.
+function AnimalBuyScheduleDialog.show(barns, lockBarn, mode, breed)
     local d = AnimalBuyScheduleDialog._instance
     if d == nil then return false end
     d.barns = barns or {}
     d.lockBarn = lockBarn == true
     d.mode = mode or MODE_BUY
+    d.breed = (type(breed) == "string" and breed ~= "") and breed or nil
+    d._breedEv, d.breedNote = nil, nil
     d.barnIndex, d.aIndex, d.bIndex = 1, 1, 1
     d.notice = nil
     g_gui:showDialog("AnimalBuyScheduleDialog")
@@ -400,13 +403,40 @@ end
 ---THE MODE TABS. Three peers, so tabs rather than a selector: a selector asks
 -- the player to step THROUGH modes to reach one, which is the wrong gesture for
 -- a set of three screens that have nothing to do with each other.
+---SELL RULES IS HIDDEN (author, 2026-09-10): *"for now disable all the sell
+-- rules and hide that tab. It should just be sell orders without rules ... later
+-- on we'll look at auto sell as a separate feature."*
+--
+-- ONE FLAG, AND THE TAB'S CODE IS LEFT INTACT. Deleting the mode would take the
+-- rules editor, its layout branches and its harness coverage with it, and the
+-- feature is deferred rather than abandoned -- so this hides the door and keeps
+-- the room. Flip it to true and the tab returns exactly as it was.
+--
+-- HIDING THE LABEL IS ENOUGH TO MAKE IT UNREACHABLE, not merely invisible:
+-- `selectMode` resolves through `AnimalTabs.pick`, which returns nil for an index
+-- with no label, so mode 3 cannot be selected by a tab, a key, or a stale index.
+AnimalBuyScheduleDialog.SELL_RULES_ENABLED = false
+
 function AnimalBuyScheduleDialog:modeLabels()
-    return { l10n("ar_bs_modeBuy",   "BUY ORDERS"),
-             l10n("ar_bs_modeSell",  "SELL ORDERS"),
-             l10n("ar_bs_modeRules", "SELL RULES") }
+    local t = { l10n("ar_bs_modeBuy",  "BUY ORDERS"),
+                l10n("ar_bs_modeSell", "SELL ORDERS") }
+    if AnimalBuyScheduleDialog.SELL_RULES_ENABLED then
+        t[#t + 1] = l10n("ar_bs_modeRules", "SELL RULES")
+    end
+    return t
+end
+
+---The mode, never past the last VISIBLE tab. A dialog is reused between opens
+-- (DR 5.77a), so a mode set while the tab existed would otherwise survive being
+-- hidden and strand the player on a screen with no way back to it.
+function AnimalBuyScheduleDialog:modeSafe()
+    local n = #self:modeLabels()
+    if type(self.mode) ~= "number" or self.mode < 1 or self.mode > n then return 1 end
+    return self.mode
 end
 
 function AnimalBuyScheduleDialog:initSelectors()
+    self.mode = self:modeSafe()
     if AnimalTabs ~= nil then
         AnimalTabs.render(self, self:modeLabels(), self.mode)
     end
@@ -518,12 +548,67 @@ function AnimalBuyScheduleDialog:rebuild()
             end
         end
     end
+    -- ONE BREED, when the dialog was opened from a breed's own row. Applied BEFORE
+    -- the indices are clamped, so a selection can never point past a list that
+    -- just got shorter.
+    self.breedNote = nil
+    if self.breed ~= nil then self:filterToBreed() end
     self.aIndex = math.max(1, math.min(self.aIndex, math.max(1, #self.rowsA)))
     self.bIndex = math.max(1, math.min(self.bIndex, math.max(1, #self.rowsB)))
     -- PRICED AFTER THE INDEX SETTLES, so the money describes the order the player
     -- can actually see highlighted.
     self:reprice()
     self:refresh()
+end
+
+---NARROW BOTH LISTS TO self.breed.
+--
+-- BUY ORDERS: the dealer rows of that breed, and the standing buy orders for it --
+-- matched by subtype where the order stored one, else by the TITLE of a dealer row
+-- that matched, which is the order's own key (23.2).
+--
+-- SELL ORDERS: the breed's own row. The standing sell orders are NOT narrowed: an
+-- order is not breed-scoped (AnimalSellSchedule.validate), so hiding some would
+-- hide orders that do act on this breed.
+--
+-- IT REFUSES TO EMPTY THE CATALOGUE. If the dealer offers rows and none can be
+-- tied to the breed, the whole catalogue stays and the note line says why: a list
+-- silently emptied by an identification failure reads as "the dealer sells no
+-- pigs", which is a different and wrong statement.
+function AnimalBuyScheduleDialog:filterToBreed()
+    local breed = self.breed
+    if breed == nil then return end
+    if self.mode == MODE_BUY then
+        if self._breedEv == nil or self._breedEv.name ~= breed then
+            self._breedEv = AnimalBuySchedule.breedEvidence(breed)
+        end
+        local keep, titles = {}, {}
+        for _, c in ipairs(self.rowsA) do
+            if AnimalBuySchedule.rowIsBreed(c, self._breedEv) then
+                keep[#keep + 1] = c
+                if c.title ~= nil then titles[c.title] = true end
+            end
+        end
+        if #keep == 0 and #self.rowsA > 0 then
+            self.breedNote = l10n("ar_bs_breedUnmatched",
+                "Could not tell which dealer animals are this breed, so all are shown.")
+            return
+        end
+        self.rowsA = keep
+        local orders = {}
+        for _, s in ipairs(self.rowsB) do
+            if s.subType == breed or (s.subType == nil and s.title ~= nil and titles[s.title]) then
+                orders[#orders + 1] = s
+            end
+        end
+        self.rowsB = orders
+    elseif self.mode == MODE_SELL_ORDER then
+        local keep = {}
+        for _, r in ipairs(self.rowsA) do
+            if r.name == breed then keep[#keep + 1] = r end
+        end
+        self.rowsA = keep
+    end
 end
 
 ---WHAT THE SELECTED ORDER WOULD SELL RIGHT NOW.
@@ -621,7 +706,9 @@ function AnimalBuyScheduleDialog:applyHeaders()
                            or l10n("ar_bs_colWhatSell", "STANDING SALE"))
     setText(self.hB2, l10n("ar_bs_colEvery", "EVERY"))
     setText(self.hB3, l10n("ar_bs_colProgress", "DONE"))
-    setText(self.hB4, buy and l10n("ar_bs_colNext", "NEXT") or l10n("ar_bs_colRules", "RULES"))
+    -- SELL ORDERS SHOW WHEN THEY NEXT SELL, not a rule set (author, 2026-09-14): an
+    -- order no longer carries rules, so the column that listed them is gone.
+    setText(self.hB4, buy and l10n("ar_bs_colNext", "NEXT") or l10n("ar_bs_colNextSale", "NEXT SALE"))
     -- A POLICY IS NOT A LIST, so the lower table is absent in that mode rather
     -- than merely empty.
     setVisible(self.hdrB, not rules)
@@ -632,7 +719,15 @@ function AnimalBuyScheduleDialog:applyHeaders()
     -- TRUE and was set false so two visible lists could not both claim a highlight
     -- (DR 6.29) -- but in RULES mode there is only ONE list, so there is nothing to
     -- be ambiguous with and the highlight should persist.
-    if self.catList ~= nil then self.catList.selectedWithoutFocus = rules end
+    --
+    -- AND ON EVERY TAB (reported 2026-09-14): picking a breed and then clicking into
+    -- one of the order fields un-highlighted the breed, because a list with this flag
+    -- off CLEARS its selection on focus leave (SmoothListElement:onFocusLeave). The
+    -- two lists here are not rivals for one button, which is what DR 6.29 guarded:
+    -- the upper selection is what the order is being set up for and the lower one is
+    -- what Pause and Remove act on -- so both stay visible.
+    if self.catList ~= nil then self.catList.selectedWithoutFocus = true end
+    if self.schedList ~= nil then self.schedList.selectedWithoutFocus = true end
 end
 
 -- WHY A CODE MAP AND NOT A BUILT KEY: check_l10n_animal.py reads QUOTED literals,
@@ -891,6 +986,7 @@ function AnimalBuyScheduleDialog:noteBase()
     if self.notice ~= nil then return self.notice end
     local _, why = self:canAct()
     if why ~= nil then return why end
+    if self.breedNote ~= nil then return self.breedNote end
 
     if self.mode == MODE_BUY then
         if #self.rowsA == 0 then
@@ -901,11 +997,10 @@ function AnimalBuyScheduleDialog:noteBase()
             "Runs at %02d:00, or during a sleep that passes it."), AnimalBuySchedule.RUN_HOUR)
     end
 
-    -- BOTH SELL MODES SAY THE SAME THING FIRST, and it is the important one: the
-    -- executor has never sold an animal unattended, so nothing here is on a timer
-    -- yet. Said plainly rather than left to be discovered as a fault.
-    local head = l10n("ar_bs_notLive",
-        "Automatic selling is not switched on yet - use Sell now to run the rules once.")
+    -- BOTH SELL MODES SAY WHEN AN ORDER RUNS, the same way the buy side does: a sell
+    -- order sells on its schedule (AnimalSellSchedule.runDue, 2026-09-14).
+    local head = l10n("ar_bs_sellRunsAt",
+        "Sells within the hour once due - set it for the month before births so they have room.")
 
     if self.mode == MODE_SELL_RULES then
         if #self.rowsA == 0 then
@@ -1000,9 +1095,10 @@ function AnimalBuyScheduleDialog:populateCellForItemInSection(list, section, ind
             -- get it from one place
             set("sWhat", AnimalBuyScheduleDialog.orderTitle(s, l10n), off)
             set("sProgress", progressText(s.runsDone, AnimalSellSchedule.totalRuns(s), l10n), off)
-            -- THE FULL RULE SET in the last column: this is the standing-sale list,
-            -- and it is the widest column on the dialog.
-            set("sNext", AnimalSellPolicy.summary(s.cfg, l10n, true), off)
+            -- WHEN IT NEXT SELLS, in months -- the same countdown the buy orders show
+            -- ("in 3 months", "starts in 2 months", "due now", or why the last run
+            -- sold nothing)
+            set("sNext", self:nextText(s), off)
         end
         set("sEvery", months(s.everyMonths), off)
         return
@@ -1185,7 +1281,7 @@ function AnimalBuyScheduleDialog:onSlot(i, state)
     local sel = stateOf(self["opt" .. i], state)
     if sel ~= nil then
         if spec.set == nil then
-            print(string.format("[AnimalRedux] slot %d (%s) has no setter but was clicked as a ring",
+            print(string.format("[HusbandryRedux] slot %d (%s) has no setter but was clicked as a ring",
                                 i, tostring(spec.kind or "ring")))
             return
         end
@@ -1441,8 +1537,7 @@ end
 
 -- "SELL NOW" IS GONE (author, 2026-09-02): *"Sell now should not even be an
 -- option. I was going to remove it anyway."* It was the ONE thing that ever moved
--- an animal, so nothing sells at all now -- which was already true on a timer
--- (AnimalSellPolicy.AUTO_LIVE is false) and is now true of every route.
+-- an animal by hand from this dialog; orders sell on their schedule instead.
 --
 -- The rules it ran are moving to the BARN-BREED (28.9) and will govern sales from
 -- there, so a button that ran one order's private rule set once had no future
@@ -1454,7 +1549,7 @@ function AnimalBuyScheduleDialog:onClickBack()
 end
 
 ---AR'S OWN PROFILES, loaded once before any layout that names them. Guarded on
--- AnimalRedux rather than on this file, because a second dialog wanting the same
+-- HusbandryRedux rather than on this file, because a second dialog wanting the same
 -- profiles must not load them again -- and because the flag then survives this
 -- dialog being re-registered.
 --
@@ -1462,22 +1557,25 @@ end
 -- to a default with no positioning at all (DR 5.64), so the control would render
 -- somewhere unrelated and look like a geometry bug. Hence "before", not "near".
 function AnimalBuyScheduleDialog.loadProfiles()
-    if AnimalRedux == nil or AnimalRedux._profilesLoaded then return end
+    if HusbandryRedux == nil or HusbandryRedux._profilesLoaded then return end
     if g_gui == nil or g_gui.loadProfiles == nil then return end
-    local ok, err = pcall(g_gui.loadProfiles, g_gui, AnimalRedux.MOD_DIR .. "gui/AnimalProfiles.xml")
-    AnimalRedux._profilesLoaded = true
-    if not ok and AnimalRedux.warn ~= nil then
-        AnimalRedux.warn("GUI profiles failed to load: %s", tostring(err))
+    local ok, err = pcall(g_gui.loadProfiles, g_gui, HusbandryRedux.MOD_DIR .. "gui/AnimalProfiles.xml")
+    HusbandryRedux._profilesLoaded = true
+    if not ok and HusbandryRedux.warn ~= nil then
+        HusbandryRedux.warn("GUI profiles failed to load: %s", tostring(err))
     end
 end
 
 function AnimalBuyScheduleDialog.register()
     if AnimalBuyScheduleDialog._instance ~= nil then return true end
-    if g_gui == nil or AnimalRedux == nil then return false end
+    if g_gui == nil or HusbandryRedux == nil then return false end
     AnimalBuyScheduleDialog.loadProfiles()
     local d = AnimalBuyScheduleDialog.new()
-    g_gui:loadGui(AnimalRedux.MOD_DIR .. "gui/AnimalBuyScheduleDialog.xml",
+    g_gui:loadGui(HusbandryRedux.MOD_DIR .. "gui/AnimalBuyScheduleDialog.xml",
                   "AnimalBuyScheduleDialog", d)
     AnimalBuyScheduleDialog._instance = d
     return true
 end
+
+-- FULL TEXT ON HOVER for any cell the layout cut short (TextTip.lua, 2026-09-29).
+if TextTip ~= nil and TextTip.install ~= nil then TextTip.install(AnimalBuyScheduleDialog) end

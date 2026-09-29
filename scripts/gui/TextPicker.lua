@@ -18,7 +18,7 @@
 -- resolution is the one the page-tab registry reached from the other side: ONE
 -- SOURCE FILE, copied, each mod loading its own under its own namespace.
 --
--- So this file knows NOTHING about Animal Redux. No globals, no l10n lookups --
+-- So this file knows NOTHING about Husbandry Redux. No globals, no l10n lookups --
 -- the words are handed in, the pattern AnimalSellPolicy.textFor already uses
 -- ("l10n is handed in so this module stays free of any GUI dependency").
 --
@@ -105,9 +105,21 @@ end
 --                   arrow gives a usable number from an empty field, and the one
 --                   that reads as "down from nothing" gives the top.
 --   at an end     : it WRAPS, the way the selector ring it replaces did.
-function TextPicker.stepValue(cur, dir, minV, maxV)
+--
+-- `step` DEFAULTS TO 1, so every caller that does not pass one is byte for byte
+-- unchanged. It exists because a range can be far wider than a count: DR 2026-09-22
+-- asked for the arrows on a RESERVE in litres to move 5% of the building's capacity,
+-- which on a 500,000 L silo is 25,000 a press where 1 is meaningless.
+--
+-- IT CLAMPS TO THE END BEFORE IT WRAPS, and with step 1 that is the same function.
+-- Stepping 98 by 5 in a 0..100 range must reach 100, not skip it and land on 0 --
+-- so a step that would overshoot stops at the end, and only a press made FROM the
+-- end wraps. At step 1 there is no difference: from maxV the old code wrapped and so
+-- does this, and from below maxV neither clamps.
+function TextPicker.stepValue(cur, dir, minV, maxV, step)
     if type(dir) ~= "number" or dir == 0 then return cur end
     if type(minV) ~= "number" or type(maxV) ~= "number" or minV > maxV then return nil end
+    step = (type(step) == "number" and step >= 1) and math.floor(step) or 1
     if type(cur) ~= "number" then
         if dir > 0 then return minV end
         return maxV
@@ -116,9 +128,9 @@ function TextPicker.stepValue(cur, dir, minV, maxV)
     -- stepped from where it should not have been.
     if cur < minV then return minV end
     if cur > maxV then return maxV end
-    local n = math.floor(cur) + (dir > 0 and 1 or -1)
-    if n > maxV then return minV end
-    if n < minV then return maxV end
+    local n = math.floor(cur) + (dir > 0 and step or -step)
+    if n > maxV then n = (cur >= maxV) and minV or maxV end
+    if n < minV then n = (cur <= minV) and maxV or minV end
     return n
 end
 
@@ -126,9 +138,13 @@ end
 -- THE INSTANCE
 -- ---------------------------------------------------------------------------
 
----opts = { min, max, prompt, outOfRange, onChanged }
+---opts = { min, max, step, prompt, outOfRange, onChanged }
 --   prompt / outOfRange  the two grey messages. STRINGS, already localised: this
 --                        file must never reach for a mod's l10n table.
+--   step                 how far one arrow press moves. Defaults to 1. Held as
+--                        `stepBy`, NOT `step`: TextPicker:step(dir) is a method on
+--                        this same table, so a field of that name shadows it and
+--                        every arrow throws "attempt to call a number value".
 --   onChanged(value)     fired only when the committed value actually moves, so a
 --                        caller can refresh a money preview without diffing it.
 function TextPicker.new(opts)
@@ -136,6 +152,7 @@ function TextPicker.new(opts)
     local self = setmetatable({}, TextPicker)
     self.min        = tonumber(opts.min) or 1
     self.max        = tonumber(opts.max) or 100
+    self.stepBy     = tonumber(opts.step) or 1
     self.prompt     = opts.prompt or "Enter number..."
     self.outOfRange = opts.outOfRange or "Number out of range..."
     self.onChanged  = opts.onChanged
@@ -145,23 +162,11 @@ function TextPicker.new(opts)
     return self
 end
 
----SAY SO WHENEVER A TYPED NUMBER IS THROWN AWAY.
---
--- TEMPORARY, added 2026-09-02 to chase a report that turning one switch on cleared
--- EVERY field rather than only the one it governs. Five explanations were built by
--- reading the dialog and not one of them survived, which is exactly the point 5.50
--- names as the trigger to stop reading and instrument.
---
--- There are only three ways a value can be discarded -- an explicit set(nil), a
--- refused commit, and a bound moving under it -- and they all pass through here,
--- so one line names WHICH field lost its value and WHY, in a single run.
---
--- `print`, not a debug-gated log: a player cannot be talked through enabling
--- anything (5.63). Silent on a farm where nothing is being discarded.
-function TextPicker:noteDiscard(why)
-    print(string.format("[TextPicker] %s: typed value discarded (%s)",
-                        tostring(self.name or "?"), tostring(why)))
-end
+---A HOOK WHENEVER A TYPED NUMBER IS THROWN AWAY (an explicit set(nil), a refused commit, or a
+-- bound moving under it). SILENT since 2026-09-29: it printed while a report was being chased
+-- (2026-09-02), and that is closed. Kept as the one place all three discard paths meet, so a
+-- diagnostic can be put back here, and so harnesses can observe it.
+function TextPicker:noteDiscard(why) end
 
 ---The elements. `hint` is optional: without one the control still works and simply
 -- shows an empty field instead of a grey prompt. The two ARROWS are optional too
@@ -392,5 +397,21 @@ end
 function TextPicker:step(dir)
     if self.inert then return self.value end
     self:releaseAndCommit()
-    return self:set(TextPicker.stepValue(self.value, dir, self.min, self.max))
+    return self:set(TextPicker.stepValue(self.value, dir, self.min, self.max, self.stepBy))
+end
+
+---Re-range the control. A bound can genuinely move under a live field: DR's reserve
+-- is bounded by the selected product's capacity and its step is 5% of it, so both
+-- change every time the selection does.
+--
+-- IT DOES NOT RE-VALIDATE THE STORED VALUE, deliberately. A caller pushing a stored
+-- figure in does that itself through `set`, which refuses out of range and says so;
+-- silently discarding a value here would fire on every selection change and the
+-- player would watch numbers vanish for no visible reason.
+function TextPicker:setRange(minV, maxV, step)
+    if type(minV) == "number" then self.min = minV end
+    if type(maxV) == "number" then self.max = maxV end
+    if type(step) == "number" and step >= 1 then self.stepBy = math.floor(step) end
+    if self.min > self.max then self.min = self.max end
+    return self
 end

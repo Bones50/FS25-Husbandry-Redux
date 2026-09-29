@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalFeedModel.lua  (Animal Redux)
+-- AnimalFeedModel.lua  (Husbandry Redux)
 --
 -- What a husbandry trough SHOULD hold, and why.
 --
@@ -405,6 +405,112 @@ function AnimalFeedModel.planWithin(model, litres, allowed)
     return out
 end
 
+---A PLAN FOR ONE CHOSEN RATION, CHEAPEST PRODUCTS FIRST (2026-09-14).
+--
+-- planWithin asks for every group and leaves DR to rank by food quality -- which puts
+-- a complete ration such as pig food ahead of every crop, however dear. This asks only
+-- for the groups of the ration AnimalAdvisor.targetRation chose, and hands DR a RANKING:
+--   * within a group, its members by live price, cheapest first (unpriced ones last,
+--     in their declared order, since "cannot be priced" is not "cannot be fed");
+--   * a complete ration LAST, as the fallback when a group has no crop in stock --
+--     one delivery splits into every group, so it keeps the herd fed, but it is the
+--     dearest way to do it;
+--   * SERIAL tiers: the chosen tier first, then the rest by production, best first,
+--     so a shortage falls back to the next-best tier rather than to nothing.
+-- Each entry is `ordered = true` (DR API v11). PARALLEL litres follow the eat weights
+-- of the CHOSEN groups, so the groups in the pool run down together.
+--
+--   opts.groups   the chosen group records (nil = every group)
+--   opts.priceOf  ft -> price or nil
+--   opts.rations  offer the model's mixtures as the last resort
+--   opts.ordered  mark the entries as ranked (only when DR supports v11)
+function AnimalFeedModel.rankedPlan(model, litres, allowed, opts)
+    local out = {}
+    if type(model) ~= "table" or type(model.groups) ~= "table" or type(litres) ~= "number"
+       or litres <= 0 or type(allowed) ~= "table" then
+        return out
+    end
+    opts = opts or {}
+    local ok = {}
+    for _, ft in ipairs(allowed) do ok[ft] = true end
+    local priceOf = opts.priceOf
+
+    local function byPrice(fts)
+        local list = {}
+        for i, ft in ipairs(fts or {}) do
+            if ok[ft] then
+                local p = nil
+                if priceOf ~= nil then
+                    local okP, v = pcall(priceOf, ft)
+                    if okP and type(v) == "number" then p = v end
+                end
+                list[#list + 1] = { ft = ft, i = i, p = p }
+            end
+        end
+        table.sort(list, function(a, b)
+            if (a.p ~= nil) ~= (b.p ~= nil) then return a.p ~= nil end
+            if a.p ~= nil and a.p ~= b.p then return a.p < b.p end
+            return a.i < b.i
+        end)
+        local r = {}
+        for _, e in ipairs(list) do r[#r + 1] = e.ft end
+        return r
+    end
+    local function appendUnique(list, seen, fts)
+        for _, ft in ipairs(fts) do
+            if not seen[ft] then seen[ft] = true; list[#list + 1] = ft end
+        end
+    end
+
+    local rations = {}
+    if opts.rations then
+        for _, ft in ipairs(model.mixtures or {}) do
+            if ok[ft] then rations[#rations + 1] = ft end
+        end
+    end
+    local chosen = nil
+    if type(opts.groups) == "table" then
+        chosen = {}
+        for _, g in ipairs(opts.groups) do chosen[g] = true end
+    end
+    local function isChosen(g) return chosen == nil or chosen[g] == true end
+
+    if model.consumptionType == "SERIAL" then
+        local tiers = {}
+        for i, g in ipairs(model.groups) do tiers[#tiers + 1] = { g = g, i = i } end
+        table.sort(tiers, function(a, b)
+            local ca, cb = isChosen(a.g), isChosen(b.g)
+            if ca ~= cb then return ca end
+            local pa, pb = a.g.production or 0, b.g.production or 0
+            if pa ~= pb then return pa > pb end
+            return a.i < b.i
+        end)
+        local fts, seen = {}, {}
+        for _, t in ipairs(tiers) do appendUnique(fts, seen, byPrice(t.g.fts)) end
+        appendUnique(fts, seen, rations)
+        if #fts > 0 then out[1] = { fillTypes = fts, litres = litres, ordered = opts.ordered == true } end
+        return out
+    end
+
+    local usable, sum = {}, 0
+    for _, g in ipairs(model.groups) do
+        if isChosen(g) then
+            local fts, seen = {}, {}
+            appendUnique(fts, seen, byPrice(g.fts))
+            appendUnique(fts, seen, rations)
+            if #fts > 0 then
+                usable[#usable + 1] = { fts = fts, eat = g.eat or 0 }
+                sum = sum + (g.eat or 0)
+            end
+        end
+    end
+    if sum <= 0 then return out end
+    for _, u in ipairs(usable) do
+        out[#out + 1] = { fillTypes = u.fts, litres = litres * u.eat / sum, ordered = opts.ordered == true }
+    end
+    return out
+end
+
 ---One concrete fill type per entry, for measuring or displaying a plan.
 -- Members of a group are interchangeable for the factor, so the first is
 -- representative; what DR actually delivers depends on stock.
@@ -512,6 +618,161 @@ function AnimalFeedModel.troughOf(placeable)
     return out, total
 end
 
+-- ---------------------------------------------------------------------------
+-- GRAZING, AND THE MEADOW THAT CANNOT BE GRAZED
+--
+-- `spec_husbandryMeadow ~= nil` is NOT the test, and AnimalHerdData used it as one.
+-- A COSMETIC paddock declares a <meadow> for the look of the thing and no
+-- <fruitType> inside it, which PlaceableHusbandryMeadow parses into an EMPTY
+-- spec.fruitTypeInfos. DR hit this twice and fixed it twice -- horse barns (DR
+-- 5.75) and then the base game's own Cow Barn (large) (DR 5.85) -- and MEASURED
+-- it across the base game plus every installed mod: 37 husbandries have a
+-- cosmetic meadow (horse, chicken and pig barns) against 70 with a grazeable
+-- one. So the naive test calls 37 barns grazers that can never eat a blade.
+--
+-- It matters here beyond tidiness: the PRODUCED table is offered to a barn that
+-- feeds itself, and on the naive flag a third of them would be offered it for
+-- grass they cannot reach.
+function AnimalFeedModel.grazeableOf(placeable)
+    local ms = placeable ~= nil and placeable.spec_husbandryMeadow or nil
+    return ms ~= nil and type(ms.fruitTypeInfos) == "table" and next(ms.fruitTypeInfos) ~= nil
+end
+
+-- ---------------------------------------------------------------------------
+-- FEEDING ROBOTS (Lely Vector / GEA DairyFeed)
+--
+-- A robot barn does NOT keep its feed in the trough. It keeps per-fill-type
+-- ingredient BUNKERS on spec_husbandryFeedingRobot.feedingRobot.fillTypeToUnloadingSpot,
+-- mixes them to a recipe, and drops the MIXED product into the food pool -- which
+-- is the only thing the trough ever holds. Everything Husbandry Redux knew about a
+-- barn's feed came from that pool (troughOf) plus the meadow (getAvailableFood),
+-- so silage, hay and straw read ZERO while their bunkers were full, mineral feed
+-- had no row on any table at all, and the whole ration was costed against the
+-- mixed product the farm never bought.
+--
+-- READ FROM THE SPEC DIRECTLY, not through Distribution Redux. DR has the same
+-- accessors and they are validated in game (sdRobotProbe), but Husbandry Redux is
+-- standalone (31) and this is plain spec access in exactly the style troughOf
+-- already uses -- so borrowing DR's would buy nothing and cost a dependency.
+function AnimalFeedModel.feedingRobotOf(placeable)
+    local spec = placeable ~= nil and placeable.spec_husbandryFeedingRobot or nil
+    return spec ~= nil and spec.feedingRobot or nil
+end
+
+---The ingredient bunkers: ft -> { held, capacity }. Empty for a barn with no robot,
+-- so every caller can ask unconditionally.
+function AnimalFeedModel.robotBunkersOf(placeable)
+    local out = {}
+    local fr = AnimalFeedModel.feedingRobotOf(placeable)
+    if fr == nil or type(fr.fillTypeToUnloadingSpot) ~= "table" then return out end
+    for ft, spot in pairs(fr.fillTypeToUnloadingSpot) do
+        if type(ft) == "number" and type(spot) == "table" then
+            -- the robot's own getFillLevel is authoritative where it exists; the spot's
+            -- own field is the fallback, exactly as DR reads it
+            local held = nil
+            if fr.getFillLevel ~= nil then
+                local ok, v = pcall(fr.getFillLevel, fr, ft)
+                if ok and type(v) == "number" then held = v end
+            end
+            if held == nil then held = spot.fillLevel or 0 end
+            out[ft] = { held = held, capacity = spot.capacity or 0 }
+        end
+    end
+    return out
+end
+
+---The mixer recipe: { mixedFt =, ingredients = { { ft =, ratio = }, ... } }, or nil.
+--
+-- `ratio` IS "litres of ingredient per litre of mix", and that is not an inference:
+-- MixerWagon.lua:481-486 uses this very field to decompose FORAGE back into its
+-- ingredients when you tip mixed feed INTO a mixer --
+--     local delta = fillLevelDelta * entry.ratio
+-- so the ratios must sum to 1 or forage would not survive the round trip. DR's
+-- robotBunkerDefaultLevel already tops each bunker on the same basis. NOTE the
+-- neighbouring fields are NOT this: minPercentage / maxPercentage are the tolerance
+-- window for a hand-mixed load, not the recipe point, and a MIXTURE's ingredients
+-- carry `weight` rather than `ratio` (PlaceableHusbandryFood.lua:551).
+--
+-- RETURNS nil RATHER THAN GUESSING. AnimalFoodSystem is not in the shipped source
+-- at all, so whether these fields are always populated cannot be established by
+-- reading -- DR's own accessor says "nil if unreadable" and carries a fallback.
+-- Callers must render an unreadable recipe as "-", never as zero: "costs nothing"
+-- and "cannot be priced" are different facts.
+function AnimalFeedModel.robotRecipeOf(placeable)
+    local fr = AnimalFeedModel.feedingRobotOf(placeable)
+    if fr == nil then return nil end
+    local robot = fr.robot
+    local rec = type(robot) == "table" and robot.recipe or nil
+    -- the robot's own recipe first (a modded robot may carry its own); then the base
+    -- game's documented entry point, the same call MixerWagon makes
+    if type(rec) ~= "table" or type(rec.ingredients) ~= "table" then
+        local afs = g_currentMission ~= nil and g_currentMission.animalFoodSystem or nil
+        local mixedFt = AnimalFeedModel.mixedFillTypeOf(placeable)
+        if afs ~= nil and afs.getRecipeByFillTypeIndex ~= nil and mixedFt ~= nil then
+            local ok, r = pcall(afs.getRecipeByFillTypeIndex, afs, mixedFt)
+            if ok and type(r) == "table" then rec = r end
+        end
+    end
+    if type(rec) ~= "table" or type(rec.ingredients) ~= "table" then return nil end
+
+    local ings = {}
+    for _, ing in ipairs(rec.ingredients) do
+        local ratio = type(ing) == "table" and ing.ratio or nil
+        if type(ratio) == "number" and type(ing.fillTypes) == "table" then
+            -- an ingredient may name SEVERAL interchangeable products; the bunker says
+            -- which one this robot actually takes, so every candidate is offered and the
+            -- caller intersects with the bunkers it found
+            for _, ft in pairs(ing.fillTypes) do
+                if type(ft) == "number" then ings[#ings + 1] = { ft = ft, ratio = ratio } end
+            end
+        end
+    end
+    if #ings == 0 then return nil end
+    return { mixedFt = AnimalFeedModel.mixedFillTypeOf(placeable), ingredients = ings }
+end
+
+---The product the robot MAKES -- what lands in the food pool and what the animals
+-- actually eat. Resolved from the recipe where it says so, else FORAGE, which is
+-- what the base game hardcodes for a mixer wagon (MixerWagon.lua:560,
+-- `newFillType = FillType.FORAGE`) and what both base robot barns declare
+-- (<mixer recipe="forage">, <dynamicFoodPlane defaultFillType="forage">).
+function AnimalFeedModel.mixedFillTypeOf(placeable)
+    local fr = AnimalFeedModel.feedingRobotOf(placeable)
+    if fr == nil then return nil end
+    local robot = fr.robot
+    local rec = type(robot) == "table" and robot.recipe or nil
+    if type(rec) == "table" then
+        local ft = rec.fillTypeIndex or rec.fillType
+        if type(ft) == "number" then return ft end
+    end
+    local ftm = g_fillTypeManager
+    if ftm ~= nil and ftm.getFillTypeIndexByName ~= nil then
+        local ok, idx = pcall(ftm.getFillTypeIndexByName, ftm, "FORAGE")
+        if ok and type(idx) == "number" then return idx end
+    end
+    return nil
+end
+
+---Litres of each ingredient the robot consumes per hour to meet `demand` litres of
+-- mixed feed. Keyed by fill type. Empty when the recipe cannot be read, which the
+-- caller must render as "-" rather than 0.
+function AnimalFeedModel.robotIngredientRates(placeable, demand)
+    local out = {}
+    if type(demand) ~= "number" or demand <= 0 then return out end
+    local rec = AnimalFeedModel.robotRecipeOf(placeable)
+    if rec == nil then return out end
+    local bunkers = AnimalFeedModel.robotBunkersOf(placeable)
+    for _, ing in ipairs(rec.ingredients) do
+        -- only ingredients this robot has a bunker for: the recipe may list
+        -- interchangeable products, and charging for one the barn cannot hold
+        -- would invent a cost
+        if bunkers[ing.ft] ~= nil then
+            out[ing.ft] = (out[ing.ft] or 0) + demand * ing.ratio
+        end
+    end
+    return out
+end
+
 -- ============================================================================
 -- arFeedPlan -- dev verification for the model above.
 --
@@ -528,6 +789,260 @@ end
 -- that animal type -- most likely a modded one -- and should be trusted over
 -- any amount of offline reasoning.
 --
+-- ===========================================================================
+-- COMPLETE RATIONS IN THE TROUGH (pig food), 2026-09-14
+-- ===========================================================================
+--
+-- A MIXTURE NEVER REACHES THE TROUGH AS ITSELF. PlaceableHusbandryFood:addFood
+-- (read from source, 21% blank = complete) looks the delivered fill type up with
+-- animalFoodSystem:getMixtureByFillType and, for a mixture, calls addFood again
+-- once per ingredient with `delta x weight`, into ingredient.fillTypes[1]. The
+-- base game's only mixture is PIGFOOD (sdk/xmlDoku/character/animalFood.xml):
+-- 50% MAIZE, 25% WHEAT, 20% SOYBEAN, 5% POTATO. So a tonne of pig food lands as
+-- four crops, and every screen then showed -- and CHARGED -- four crops at crop
+-- prices, while pig food itself had no row anywhere.
+--
+-- THIS LEDGER REMEMBERS WHICH SHARE OF EACH CROP CAME FROM A MIXTURE.
+--
+-- ONLY ADDING CAN CHANGE A SHARE, which is what keeps this to one hook. The
+-- trough is well mixed: eating removes loose maize and pig-food maize in
+-- proportion, so the pig-food share of the maize in the trough is unchanged by
+-- consumption. It moves only when something is ADDED -- a mixture raises it,
+-- loose crop dilutes it -- and addFood sees every addition, whether DR delivered
+-- it (DR calls placeable:addFood) or a player tipped it by hand.
+--
+-- A RELOAD IS NOT A DELIVERY. Placeable:loadFromXMLFile re-adds every saved fill
+-- level through addFood, with `isLoadingFromSavegameXML` set true around the spec
+-- loads (Placeable.lua:627-635). Those calls are ignored, and the shares come back
+-- from husbandryRedux.xml instead, which loads after the placeables.
+--
+-- SERVER-SIDE. Deliveries are server work; a multiplayer client receives fill
+-- levels through the husbandry's stream, not through addFood, so a client's
+-- ledger stays empty and its tables show crops as before.
+AnimalFeedModel.MixLedger = {
+    -- placeable -> ingredient ft -> mixture ft -> share (0..1). WEAK KEYS, so a
+    -- demolished barn takes its entry with it.
+    byBarn = setmetatable({}, { __mode = "k" }),
+    _depth = 0,
+    _installed = false,
+}
+
+---A mixture's recipe, or nil when `mixFt` is not one.
+---Returns { fillType = mixFt, ingredients = { { fillType = ft, weight = w }, ... } }.
+function AnimalFeedModel.mixtureOf(mixFt)
+    local afs = foodSystem()
+    if afs == nil or afs.getMixtureByFillType == nil or mixFt == nil then return nil end
+    local ok, mix = pcall(afs.getMixtureByFillType, afs, mixFt)
+    if not ok or type(mix) ~= "table" or type(mix.ingredients) ~= "table" then return nil end
+    local out = { fillType = mixFt, ingredients = {} }
+    for _, ing in ipairs(mix.ingredients) do
+        -- fillTypes[1], because that is the one addFood actually puts in the trough
+        local ft = type(ing.fillTypes) == "table" and ing.fillTypes[1] or nil
+        local w = tonumber(ing.weight)
+        if ft ~= nil and w ~= nil and w > 0 then
+            out.ingredients[#out.ingredients + 1] = { fillType = ft, weight = w }
+        end
+    end
+    if #out.ingredients == 0 then return nil end
+    return out
+end
+
+---Record `added` litres of `ft` arriving on top of `levelBefore`. `mixFt` names
+-- the mixture they came from, or nil for a loose delivery. Pure arithmetic.
+function AnimalFeedModel.MixLedger.noteAdded(p, ft, added, levelBefore, mixFt)
+    if p == nil or ft == nil or type(added) ~= "number" or added <= 0 then return end
+    local L = AnimalFeedModel.MixLedger
+    levelBefore = math.max(0, tonumber(levelBefore) or 0)
+    local after = levelBefore + added
+    if after <= 0 then return end
+    local barn = L.byBarn[p]
+    local shares = barn ~= nil and barn[ft] or nil
+    local nextShares, any = {}, false
+    -- what was already there keeps its litres, now a smaller share of more
+    for m, s in pairs(shares or {}) do
+        local v = s * levelBefore / after
+        if v > 1e-9 then nextShares[m] = v; any = true end
+    end
+    if mixFt ~= nil then
+        nextShares[mixFt] = (nextShares[mixFt] or 0) + added / after
+        any = true
+    end
+    if not any then
+        if barn ~= nil then barn[ft] = nil end
+        return
+    end
+    if barn == nil then barn = {}; L.byBarn[p] = barn end
+    barn[ft] = nextShares
+end
+
+---ingredient ft -> { mixFt = share }. Never nil.
+function AnimalFeedModel.MixLedger.sharesOf(p, ft)
+    local barn = p ~= nil and AnimalFeedModel.MixLedger.byBarn[p] or nil
+    return (barn ~= nil and barn[ft]) or {}
+end
+
+---The mixture-derived litres sitting in this barn's trough now.
+---Returns mixFt -> { held = litres, byIngredient = { [ft] = litres } }.
+function AnimalFeedModel.MixLedger.derivedOf(p)
+    local out = {}
+    local barn = p ~= nil and AnimalFeedModel.MixLedger.byBarn[p] or nil
+    if barn == nil then return out end
+    local trough = AnimalFeedModel.troughOf(p)
+    for ft, shares in pairs(barn) do
+        local lvl = trough[ft] or 0
+        if lvl > 0 then
+            for m, s in pairs(shares) do
+                local litres = lvl * s
+                if litres > 0 then
+                    local d = out[m]
+                    if d == nil then d = { held = 0, byIngredient = {} }; out[m] = d end
+                    d.held = d.held + litres
+                    d.byIngredient[ft] = (d.byIngredient[ft] or 0) + litres
+                end
+            end
+        end
+    end
+    return out
+end
+
+function AnimalFeedModel.MixLedger.clear()
+    AnimalFeedModel.MixLedger.byBarn = setmetatable({}, { __mode = "k" })
+end
+
+---THE HOOK, as Utils.overwrittenFunction hands it: (self, superFunc, ...).
+--
+-- IT NEVER CHANGES WHAT addFood DOES. The original runs with the original
+-- arguments and its return value is handed back untouched; the ledger only reads
+-- the fill levels either side of it. A throw inside the original is re-raised
+-- after the depth counter is restored, so a failure is the base game's own and a
+-- stuck counter cannot silence every later delivery.
+function AnimalFeedModel.MixLedger.addFoodHook(self, superFunc, farmId, delta, ft, ...)
+    local L = AnimalFeedModel.MixLedger
+    local spec = self ~= nil and self.spec_husbandryFood or nil
+    -- the ingredient calls a mixture makes of addFood (the outer call accounts for
+    -- them), a reload re-adding saved food, or no food spec: straight through
+    if L._depth > 0 or spec == nil or type(spec.fillLevels) ~= "table"
+       or self.isLoadingFromSavegameXML == true then
+        return superFunc(self, farmId, delta, ft, ...)
+    end
+    local mix = nil
+    local okM, m = pcall(AnimalFeedModel.mixtureOf, ft)
+    if okM then mix = m end
+    local before = {}
+    if mix ~= nil then
+        for _, ing in ipairs(mix.ingredients) do
+            before[ing.fillType] = spec.fillLevels[ing.fillType] or 0
+        end
+    elseif ft ~= nil then
+        before[ft] = spec.fillLevels[ft] or 0
+    end
+
+    L._depth = L._depth + 1
+    local ok, res = pcall(superFunc, self, farmId, delta, ft, ...)
+    L._depth = L._depth - 1
+    if not ok then error(res, 0) end
+
+    pcall(function()
+        for ingFt, lvl in pairs(before) do
+            local added = (spec.fillLevels[ingFt] or 0) - lvl
+            if added > 0 then
+                L.noteAdded(self, ingFt, added, lvl, mix ~= nil and ft or nil)
+            end
+        end
+    end)
+    return res
+end
+
+---Installed at SCRIPT LOAD, before placeable types are built, because addFood is a
+-- registered specialization function copied into each type (the same timing DR
+-- relies on for PlaceableHusbandryPallets.updatePallets, confirmed in game).
+function AnimalFeedModel.installMixLedger()
+    local L = AnimalFeedModel.MixLedger
+    if L._installed then return true end
+    if PlaceableHusbandryFood == nil or PlaceableHusbandryFood.addFood == nil
+       or Utils == nil or Utils.overwrittenFunction == nil then
+        if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then
+            HusbandryRedux.warn("pig food ledger: PlaceableHusbandryFood.addFood not found, complete rations will show as their crops")
+        end
+        return false
+    end
+    PlaceableHusbandryFood.addFood = Utils.overwrittenFunction(PlaceableHusbandryFood.addFood,
+                                                               L.addFoodHook)
+    L._installed = true
+    return true
+end
+
+-- ---- PERSISTENCE: shares by barn uniqueId, fill types by NAME ----------------
+local function ftNameOf(ft)
+    local m = g_fillTypeManager
+    if m == nil or m.getFillTypeNameByIndex == nil then return nil end
+    local ok, n = pcall(m.getFillTypeNameByIndex, m, ft)
+    return (ok and type(n) == "string" and n ~= "") and n or nil
+end
+
+local function ftIndexOf(name)
+    local m = g_fillTypeManager
+    if m == nil or m.getFillTypeIndexByName == nil or type(name) ~= "string" then return nil end
+    local ok, i = pcall(m.getFillTypeIndexByName, m, name)
+    return ok and i or nil
+end
+
+local function saveMixSection(xml, key)
+    local i = 0
+    for p, barn in pairs(AnimalFeedModel.MixLedger.byBarn) do
+        local uid = p ~= nil and p.uniqueId or nil
+        if type(uid) == "string" and uid ~= "" then
+            for ingFt, shares in pairs(barn) do
+                local ingName = ftNameOf(ingFt)
+                for mixFt, s in pairs(shares) do
+                    local mixName = ftNameOf(mixFt)
+                    if ingName ~= nil and mixName ~= nil and type(s) == "number" and s > 0 then
+                        local k = string.format("%s.share(%d)", key, i)
+                        setXMLString(xml, k .. "#uid", uid)
+                        setXMLString(xml, k .. "#ingredient", ingName)
+                        setXMLString(xml, k .. "#mixture", mixName)
+                        setXMLFloat(xml, k .. "#share", s)
+                        i = i + 1
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function loadMixSection(xml, key)
+    -- UNCONDITIONALLY CLEARED: the chunk re-runs per mission load (AnimalPersist trap 4)
+    AnimalFeedModel.MixLedger.clear()
+    if xml == nil then return end
+    local byUid = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    for _, p in ipairs((ps ~= nil and ps.placeables) or {}) do
+        if type(p) == "table" and type(p.uniqueId) == "string" then byUid[p.uniqueId] = p end
+    end
+    local i = 0
+    while true do
+        local k = string.format("%s.share(%d)", key, i)
+        if not hasXMLProperty(xml, k) then break end
+        local p = byUid[getXMLString(xml, k .. "#uid") or ""]
+        local ing = ftIndexOf(getXMLString(xml, k .. "#ingredient"))
+        local mix = ftIndexOf(getXMLString(xml, k .. "#mixture"))
+        local s = getXMLFloat(xml, k .. "#share")
+        if p ~= nil and ing ~= nil and mix ~= nil and type(s) == "number" and s > 0 then
+            local L = AnimalFeedModel.MixLedger
+            local barn = L.byBarn[p]
+            if barn == nil then barn = {}; L.byBarn[p] = barn end
+            barn[ing] = barn[ing] or {}
+            barn[ing][mix] = math.min(1, s)
+        end
+        i = i + 1
+    end
+end
+
+if AnimalPersist ~= nil and AnimalPersist.register ~= nil then
+    AnimalPersist.register("mixLedger", saveMixSection, loadMixSection)
+end
+AnimalFeedModel.installMixLedger()
+
 -- Needs game.xml <development><controls>true.
 -- ============================================================================
 AnimalFeedModel.Console = {}
@@ -715,7 +1230,7 @@ end
 function AnimalFeedModel.Console.register()
     if addConsoleCommand == nil then return false end
     if AnimalFeedModel.Console._registered then return true end
-    addConsoleCommand("arFeedPlan", "Compare the current trough with the Animal Redux feed model",
+    addConsoleCommand("arFeedPlan", "Compare the current trough with the Husbandry Redux feed model",
         "consoleCommand", AnimalFeedModel.Console)
     AnimalFeedModel.Console._registered = true
     return true

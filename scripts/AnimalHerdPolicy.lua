@@ -195,15 +195,15 @@ function AnimalHerdPolicy.engineKey(k) return AnimalHerdPolicy.ENGINE_KEY[k] end
 AnimalHerdPolicy.byBarn = {}
 
 local function warn(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.warn ~= nil then return AnimalRedux.warn(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then return HusbandryRedux.warn(fmt, ...) end
     local ok, msg = pcall(string.format, fmt, ...)
-    print("[AnimalRedux] " .. (ok and msg or tostring(fmt)))
+    print("[HusbandryRedux] " .. (ok and msg or tostring(fmt)))
 end
 
 ---Progress, not failure. Gated on the Debug setting so a normal session's log
 -- carries only what went wrong (AnimalSettings, the "debug" row).
 local function dbg(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.log ~= nil then return AnimalRedux.log(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.log ~= nil then return HusbandryRedux.log(fmt, ...) end
 end
 
 local function keyOk(uid, breed)
@@ -258,6 +258,55 @@ function AnimalHerdPolicy.cyclePurpose(uid, breed)
     end
     local nxt = ring[(at % #ring) + 1]
     if nxt == false then nxt = nil end
+    return AnimalHerdPolicy.setPurpose(uid, breed, nxt)
+end
+
+---WHAT A BREED IS KEPT FOR WHEN NOBODY HAS SAID (2026-09-13).
+--
+-- A breed whose animals make anything besides MANURE or SLURRY is kept for what
+-- it makes, so it defaults to PRODUCER. One whose only outputs are manure and
+-- slurry earns its keep by breeding, so it defaults to BREEDER -- pigs are that
+-- case.
+--
+-- A DEFAULT, NEVER A WRITE. purposeOf still answers nil for an untouched breed,
+-- so the store stays sparse and everything that reads purposeOf (the adviser, the
+-- rules) is unchanged by this. effectivePurpose is what a table SHOWS.
+--
+-- Read from the subtype's own declared outputs, by NAME, through the base game's
+-- animalSystem:getSubTypeByName (Rideable.lua calls it). nil when the breed
+-- cannot be resolved: an unknown answer is not a guess at either.
+AnimalHerdPolicy.WASTE_OUTPUTS = { manure = true, liquidManure = true }
+
+function AnimalHerdPolicy.defaultPurpose(breed)
+    if type(breed) ~= "string" or breed == "" then return nil end
+    local asys = g_currentMission ~= nil and g_currentMission.animalSystem or nil
+    if asys == nil or asys.getSubTypeByName == nil then return nil end
+    local ok, st = pcall(asys.getSubTypeByName, asys, breed)
+    if not ok or type(st) ~= "table" or type(st.output) ~= "table" then return nil end
+    for key, decl in pairs(st.output) do
+        if decl and not AnimalHerdPolicy.WASTE_OUTPUTS[key] then
+            return AnimalHerdPolicy.PRODUCER
+        end
+    end
+    return AnimalHerdPolicy.BREEDER
+end
+
+---The purpose to SHOW: the player's where they set one, else the default. The
+-- second return is true when it IS the default, so a caller can tell the two apart.
+function AnimalHerdPolicy.effectivePurpose(uid, breed)
+    local p = AnimalHerdPolicy.purposeOf(uid, breed)
+    if p ~= nil then return p, false end
+    return AnimalHerdPolicy.defaultPurpose(breed), true
+end
+
+---Flip between the two answers, starting from what is SHOWN, and always write an
+-- explicit choice. For a table that displays the default: stepping the
+-- three-state ring there would pass through UNSET, which looks exactly like the
+-- default, so one press in three would appear to do nothing.
+function AnimalHerdPolicy.togglePurpose(uid, breed)
+    local cur = AnimalHerdPolicy.effectivePurpose(uid, breed)
+    local nxt = (cur == AnimalHerdPolicy.PRODUCER) and AnimalHerdPolicy.BREEDER
+                                                     or AnimalHerdPolicy.PRODUCER
     return AnimalHerdPolicy.setPurpose(uid, breed, nxt)
 end
 

@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalPersist.lua -- ONE savegame file for Animal Redux, and the four traps
+-- AnimalPersist.lua -- ONE savegame file for Husbandry Redux, and the four traps
 -- that make per-savegame persistence in FS25 harder than it looks.
 --
 -- AR had NO persistence of any kind before this (grepped: not one saveToXMLFile
@@ -44,8 +44,31 @@
 
 AnimalPersist = {}
 
-AnimalPersist.FILE    = "animalRedux.xml"
-AnimalPersist.ROOT    = "animalRedux"
+AnimalPersist.FILE    = "husbandryRedux.xml"
+
+---THE NAME THIS FILE HAD BEFORE THE MOD WAS RENAMED (2026-09-20).
+--
+-- The savegame file is keyed by NAME, not by the mod folder, so renaming it would have
+-- orphaned the animal data in every existing save -- schedules, sell rules, herd policy,
+-- the lot -- with no error and nothing in the log, because an absent file is a legitimate
+-- state that means "a fresh world" (trap 4 below).
+--
+-- So the old name is still READ when the new one is absent, and the next SAVE writes the
+-- new one. One-way and self-completing: after a single save-and-reload the old file is
+-- simply ignored, and it is never written to again.
+AnimalPersist.FILE_LEGACY = "husbandryRedux.xml"
+
+---The file to READ from `dir`, preferring the current name and falling back to the old
+-- one. Returns the path and whether it was the legacy file, or nil if neither is there.
+function AnimalPersist.resolveReadPath(dir)
+    if dir == nil or fileExists == nil then return nil, false end
+    local cur = dir .. AnimalPersist.FILE
+    if fileExists(cur) then return cur, false end
+    local old = dir .. AnimalPersist.FILE_LEGACY
+    if fileExists(old) then return old, true end
+    return nil, false
+end
+AnimalPersist.ROOT    = "husbandryRedux"
 -- Bumped only when a written shape changes incompatibly. It is READ on load, so
 -- a future migration has something to branch on -- DR shipped a version that was
 -- written from the first build and never once read, which is worth nothing.
@@ -67,14 +90,14 @@ AnimalPersist._version  = AnimalPersist.VERSION
 -- chatter from the next load onward, which is what a persisted flag can honestly
 -- promise.
 local function say(fmt, ...)
-    if AnimalRedux == nil or AnimalRedux.debug ~= true then return end
+    if HusbandryRedux == nil or HusbandryRedux.debug ~= true then return end
     local ok, msg = pcall(string.format, fmt, ...)
-    print("[AnimalRedux persist] " .. (ok and msg or tostring(fmt)))
+    print("[HusbandryRedux persist] " .. (ok and msg or tostring(fmt)))
 end
 
 local function hard(fmt, ...)
     local ok, msg = pcall(string.format, fmt, ...)
-    print("[AnimalRedux persist] " .. (ok and msg or tostring(fmt)))
+    print("[HusbandryRedux persist] " .. (ok and msg or tostring(fmt)))
 end
 
 ---Register a section. Re-registering a name REPLACES it rather than appending,
@@ -99,7 +122,7 @@ end
 -- written to fix. AR requires DR, so DR's is preferred and the local copy is a
 -- fallback for a DR too old to expose it -- not a second opinion.
 function AnimalPersist.saveDir(missionInfo)
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     if SD ~= nil and type(SD.getSaveDir) == "function" then
         local ok, dir, authoritative = pcall(SD.getSaveDir, missionInfo)
         if ok then return dir, authoritative == true end
@@ -125,7 +148,7 @@ end
 -- (8.1 -- an absence proves nothing, and that cuts both ways). Every section is
 -- written in the same pass, so nothing of ours is lost by starting clean.
 local function openForWrite(path)
-    return createXMLFile("AnimalRedux", path, AnimalPersist.ROOT)
+    return createXMLFile("HusbandryRedux", path, AnimalPersist.ROOT)
 end
 
 ---Hand every registered section its subtree. `xml` may be nil, and that is not
@@ -168,9 +191,10 @@ function AnimalPersist.adoptPending()
         hard("SAVE skipped: load still pending and the live savegame folder is unresolved")
         return false
     end
-    local livePath = getUserProfileAppPath() .. "savegame" .. tostring(idx) .. "/" .. AnimalPersist.FILE
-    if fileExists(livePath) then
-        local xml = loadXMLFile("AnimalRedux", livePath)
+    local liveDir  = getUserProfileAppPath() .. "savegame" .. tostring(idx) .. "/"
+    local livePath = AnimalPersist.resolveReadPath(liveDir)
+    if livePath ~= nil then
+        local xml = loadXMLFile("HusbandryRedux", livePath)
         if xml == nil or xml == 0 then
             hard("SAVE skipped: load pending and %s could not be read", tostring(livePath))
             return false
@@ -258,8 +282,13 @@ function AnimalPersist.load()
         say("LOAD deferred: savegame directory unresolved -- will retry")
         return
     end
-    local path = dir .. AnimalPersist.FILE
-    if not fileExists(path) then
+    local path, legacy = AnimalPersist.resolveReadPath(dir)
+    if legacy then
+        say("LOAD: reading the pre-rename %s; the next save writes %s",
+            AnimalPersist.FILE_LEGACY, AnimalPersist.FILE)
+    end
+    if path == nil then
+        path = dir .. AnimalPersist.FILE        -- for the message below
         if not authoritative then
             say("LOAD deferred: %s absent but the path was GUESSED -- will retry", tostring(path))
             return
@@ -269,7 +298,7 @@ function AnimalPersist.load()
         say("LOAD: no file for this savegame -- starting empty")
         return
     end
-    local xml = loadXMLFile("AnimalRedux", path)
+    local xml = loadXMLFile("HusbandryRedux", path)
     if xml == nil or xml == 0 then
         hard("LOAD FAILED: could not open %s", tostring(path))
         return
@@ -295,7 +324,7 @@ if FSCareerMissionInfo ~= nil and FSCareerMissionInfo.saveToXMLFile ~= nil then
             pcall(AnimalPersist.save, self)
         end)
 else
-    print("[AnimalRedux persist] SAVE HOOK NOT ATTACHED -- FSCareerMissionInfo.saveToXMLFile missing")
+    print("[HusbandryRedux persist] SAVE HOOK NOT ATTACHED -- FSCareerMissionInfo.saveToXMLFile missing")
 end
 
 if Mission00 ~= nil and Mission00.loadMission00Finished ~= nil then

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
-<!-- Animal Redux: this mod's own GUI profiles.
+<!-- Husbandry Redux: this mod's own GUI profiles.
 
      AR HAS NEVER HAD ONE UNTIL NOW. Every profile its layouts name is either the
      base game's or one of DR's (SDList, SDRowCell, SDHeaderLeft, SDBarLabel,
@@ -98,6 +98,39 @@
          thirteenth for one line. -->
     <Profile name="ARRowArrowRight" extends="fs25_multiTextOptionRight" with="anchorStretchingYLeft" />
 
+    <!-- A TEXT BUTTON INSIDE A TABLE ROW (2026-09-13): Buy and Sell on the Pigs
+         tab's animals, Auto Trader on its breeds. Built on the base game's
+         fs25_wideButton, which AR's dialog buttons already render through.
+
+         THREE OVERRIDES, each read from ButtonElement.lua (27% blank, complete):
+         * iconSize and iconTextOffset ZERO. fs25_wideButton reserves a 30px key
+           glyph at a -10px offset, and when centring the button shifts its text
+           right by (iconWidth - iconTextOffset) / 2 = 20px (getIconModifiedTextOffset).
+           That is what pushed every label to the right edge of its box. With no
+           glyph there is no shift, so centred text is centred.
+         * textAutoWidth ON, fitToContent OFF. updateSize then sets the WIDTH to
+           icon + text + fitExtraWidth and keeps the height, so the box is exactly
+           as wide as its label plus padding. fitToContent would also force the
+           height down to the text height.
+         * THE BOX IS THE BUTTON'S OWN BACKGROUND. baseReference's solid slice
+           gui.colorPreset, tinted, which emptyPanel switches off. Drawn by the
+           button itself, so it resizes with the text and needs no separate
+           rectangle in the layout. Hover and focus lighten it. -->
+    <Profile name="ARRowButton" extends="fs25_wideButton" with="anchorBottomLeft">
+        <textSize value="12px"/>
+        <fitToContent value="false"/>
+        <textAutoWidth value="true"/>
+        <fitExtraWidth value="12px"/>
+        <iconSize value="0px 0px"/>
+        <iconTextOffset value="0px 0px"/>
+        <imageSliceId value="gui.colorPreset"/>
+        <imageColor value="0.24 0.26 0.29 0.9"/>
+        <imageHighlightedColor value="0.34 0.37 0.41 1"/>
+        <imageFocusedColor value="0.34 0.37 0.41 1"/>
+        <imageSelectedColor value="0.24 0.26 0.29 0.9"/>
+        <imageDisabledColor value="0.24 0.26 0.29 0.4"/>
+    </Profile>
+
     <!-- ======================================================================
          THE ELEVEN PROFILES THIS MOD USED TO BORROW FROM DISTRIBUTION REDUX.
 
@@ -147,6 +180,23 @@
 <Profile name="ARHeaderRight" extends="ARHeaderLeft">
         <textAlignment value="left" />
     </Profile>
+
+<!-- The A / D hints at each end of a tab strip. TEXT GLYPHS, not the stock arrow art:
+     the icon there is sampled from the UI atlas and garbles whenever it is re-sized
+     (DR 5.64), and these need a letter beside them. A chevron in text cannot garble.
+     BUTTONS as well as hints, so a mouse player can click them.
+     AR'S OWN, never borrowed from DR: this mod runs standalone, and check_profiles.py
+     enforces that every profile a layout names is AR's or the base game's. -->
+<Profile name="ARTabArrow" extends="emptyPanel">
+    <size value="40px 40px" />
+    <textBold value="true" />
+    <textSize value="18px" />
+    <textAlignment value="center" />
+    <textVerticalAlignment value="middle" />
+    <textColor value="$preset_fs25_colorMainLight" />
+    <textFocusedColor value="$preset_fs25_colorMainHighlight" />
+    <textSelectedColor value="$preset_fs25_colorMainHighlight" />
+</Profile>
 
 <Profile name="ARList" extends="emptyPanel" with="anchorStretchingYLeft pivotTopLeft">
     </Profile>

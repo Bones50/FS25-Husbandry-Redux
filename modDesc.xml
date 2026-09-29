@@ -4,19 +4,19 @@
      silences the version notice. -->
 <modDesc descVersion="111">
     <author>Bones</author>
-    <version>0.0.0.2</version>
+    <version>0.0.0.3</version>
 
     <title>
-        <en>Animal Redux</en>
+        <en>Husbandry Redux</en>
     </title>
     <description>
         <en><![CDATA[
-Animal Redux
+Husbandry Redux
 
 Deepens Farming Simulator 25's animal husbandry: a herd inspector, buy and sell
 scheduling, feed planning and per-barn profit.
 
-Runs on its own. Distribution Redux is optional - install both and Animal Redux
+Runs on its own. Distribution Redux is optional - install both and Husbandry Redux
 adds its pages to the Distribution Redux menu and can plan feed through it. Two
 settings need Distribution Redux and say so in the settings screen when it is
 not installed; everything else works either way.
@@ -25,7 +25,7 @@ Feedback/Issues: https://github.com/Bones50/FS25-Animal-Redux
         ]]></en>
     </description>
 
-    <iconFilename>icon_AnimalRedux.dds</iconFilename>
+    <iconFilename>icon_HusbandryRedux.dds</iconFilename>
     <multiplayer supported="true"/>
 
     <actions>
@@ -38,7 +38,7 @@ Feedback/Issues: https://github.com/Bones50/FS25-Animal-Redux
     </inputBinding>
 
     <extraSourceFiles>
-        <sourceFile filename="scripts/AnimalRedux.lua"/>
+        <sourceFile filename="scripts/HusbandryRedux.lua"/>
         <!-- EARLY: it owns the savegame file and every other script registers a
              section with it at file scope, so it has to exist by then. -->
         <sourceFile filename="scripts/AnimalPersist.lua"/>
@@ -58,7 +58,11 @@ Feedback/Issues: https://github.com/Bones50/FS25-Animal-Redux
         <!-- AFTER AnimalBuySchedule: it calls that module for the month arithmetic. -->
         <sourceFile filename="scripts/AnimalSellSchedule.lua"/>
         <sourceFile filename="scripts/AnimalHerdPolicy.lua"/>
+        <sourceFile filename="scripts/AnimalFeedPolicy.lua"/>
+        <sourceFile filename="scripts/AnimalAdvisor.lua"/>
+        <sourceFile filename="scripts/AnimalAlerts.lua"/>
         <sourceFile filename="scripts/gui/TextPicker.lua"/>
+        <sourceFile filename="scripts/gui/TextTip.lua"/>
         <sourceFile filename="scripts/gui/AnimalTabs.lua"/>
         <sourceFile filename="scripts/gui/AnimalMenuPage.lua"/>
         <sourceFile filename="scripts/gui/AnimalMenu.lua"/>
@@ -68,7 +72,6 @@ Feedback/Issues: https://github.com/Bones50/FS25-Animal-Redux
         <sourceFile filename="scripts/gui/HerdInspectorPage.lua"/>
         <sourceFile filename="scripts/gui/AnimalTradeDialog.lua"/>
         <sourceFile filename="scripts/gui/AnimalBuyScheduleDialog.lua"/>
-        <sourceFile filename="scripts/gui/AnimalRulesDialog.lua"/>
         <!-- TEMPORARY dev probe. Remove with the file once the feed model is settled. -->
         <sourceFile filename="scripts/AnimalFoodProbe.lua"/>
     </extraSourceFiles>
@@ -80,11 +83,11 @@ Feedback/Issues: https://github.com/Bones50/FS25-Animal-Redux
          in game. IT IS NOW: it hard-blocks. With DR removed the game refuses to
          load this mod and prompts the player to reinstall DR, so no amount of
          guarding in code could ever have been reached.
-         Animal Redux is independently installable as of that date: it carries its
+         Husbandry Redux is independently installable as of that date: it carries its
          own GUI profiles, its own husbandry panel renderer, its own menu and page
          base classes, and gates the two settings that genuinely need DR on the
          CAPABILITY being present rather than on DR being installed. The code
-         guards (AnimalRedux.resolveDistributionRedux and friends) remain and are
+         guards (HusbandryRedux.resolveDistributionRedux and friends) remain and are
          now the only mechanism, which is the point.
          DO NOT REINSTATE THIS ELEMENT to express "works better with DR". It does
          not mean that; it means "refuse to run without it". -->

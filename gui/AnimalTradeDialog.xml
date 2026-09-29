@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
-<!-- Animal Redux: the BUY / SELL window.
+<!-- Husbandry Redux: the BUY / SELL window.
 
      Laid out on the base game's own animal screen, which reads top to bottom:
      WHAT you are doing, WHERE, WHICH animals, HOW MANY, WHAT IT COSTS, and then the

@@ -6,7 +6,7 @@
              feed and production.
 
      THE ROOT STRUCTURE IS THE BASE GAME'S AND MUST STAY THAT WAY. It was copied
-     from the original Animal Redux page, which has since been retired (20.28) -
+     from the original Husbandry Redux page, which has since been retired (20.28) -
      so this file is now the only record of the shape, and the reason it has to
      be this shape is below.
      The first build invented a root (profile="emptyPanel" over
@@ -35,8 +35,17 @@
                 2026-08-31 as the widest blank on the page. 185 + 20 gutter = 205,
                 the same 20px gutter DR's own pages use between list and tables.
                 left  x=205 w=680   animals -286 (40) | list -330 (480)
-                right x=893 w=587   feed    -286 (40) | list -330 (260)
-                                    outputs -624 (40) | list -666 (144)
+                right x=893 w=587   feed     -286 (40) | list -330 (164)
+                                    produced -502 (40) | list -546  (84)
+                                    outputs  -638 (40) | list -682 (128)
+                                    THREE tables since 2026-09-09. The PRODUCED one
+                                    holds feed the barn made rather than bought, so
+                                    it applies to every robot barn AND every barn
+                                    with a grazeable meadow, which is about half of
+                                    them: not worth hiding, so the layout is fixed
+                                    and the space comes off the other two. 164 and
+                                    128 are 3.9 and 3.05 rows at the 42px pitch, and
+                                    every list scrolls.
                 Both columns end at -810, so the animals list and the outputs list
                 finish on the same line. Outputs sits under FEED, aligned to it -
                 same x, same width - which reads "what goes in, then what comes
@@ -72,18 +81,54 @@
              These are the BASE GAME'S OWN tab profiles; unselected draws nothing, so
              only the active tab shows a background. -->
         <Bitmap profile="ARList" position="0px 0px" size="1480px 40px">
+            <!-- A / D HINTS. The tabs shifted right by 48px to clear this one; the next
+                 arrow follows the last slot (520+146=666, +8). Same keys and the same
+                 look as every tabbed page in Distribution Redux, so the two mods'
+                 menus behave identically whichever one you are looking at. -->
+            <Button profile="ARTabArrow" position="16px 0px" size="40px 40px"
+                    name="arTabPrev" id="arTabPrev" onClick="onTabPrev" />
             <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
-                             position="16px 0px" size="146px 40px" name="arTabBg1" id="arTabBg1"/>
-            <Button profile="fs25_subCategorySelectorTabbedTab" position="16px 0px" size="146px 40px" textAutoWidth="false"
+                             position="64px 0px" size="146px 40px" name="arTabBg1" id="arTabBg1"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="64px 0px" size="146px 40px" textAutoWidth="false"
                     name="arTabBtn1" id="arTabBtn1" onClick="onTab1"/>
             <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
-                             position="168px 0px" size="146px 40px" name="arTabBg2" id="arTabBg2"/>
-            <Button profile="fs25_subCategorySelectorTabbedTab" position="168px 0px" size="146px 40px" textAutoWidth="false"
+                             position="216px 0px" size="146px 40px" name="arTabBg2" id="arTabBg2"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="216px 0px" size="146px 40px" textAutoWidth="false"
                     name="arTabBtn2" id="arTabBtn2" onClick="onTab2"/>
             <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
-                             position="320px 0px" size="146px 40px" name="arTabBg3" id="arTabBg3"/>
-            <Button profile="fs25_subCategorySelectorTabbedTab" position="320px 0px" size="146px 40px" textAutoWidth="false"
+                             position="368px 0px" size="146px 40px" name="arTabBg3" id="arTabBg3"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="368px 0px" size="146px 40px" textAutoWidth="false"
                     name="arTabBtn3" id="arTabBtn3" onClick="onTab3"/>
+            <!-- TAB 4, PIGS (2026-09-13): the barn view filtered to pigsties.
+                 Same pitch as the others: 520+146=666. -->
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="520px 0px" size="146px 40px" name="arTabBg4" id="arTabBg4"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="520px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn4" id="arTabBtn4" onClick="onTab4"/>
+            <!-- SLOTS, NOT VIEWS (2026-09-24). Which view sits in a slot is decided at runtime:
+                 the strip shows only the views that have something to show (the Herd Inspector
+                 always; Breeds with any barn; each animal type with a barn of that type), so
+                 slot N is the Nth VISIBLE view. Eight slots is every view there is: Herd
+                 Inspector, Breeds, Pigs, Cows, Sheep, Horses, Chickens, Other. Same 152px
+                 pitch throughout: slot 8 at 1128+146=1274, next arrow at 1282. -->
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="672px 0px" size="146px 40px" name="arTabBg5" id="arTabBg5"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="672px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn5" id="arTabBtn5" onClick="onTab5"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="824px 0px" size="146px 40px" name="arTabBg6" id="arTabBg6"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="824px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn6" id="arTabBtn6" onClick="onTab6"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="976px 0px" size="146px 40px" name="arTabBg7" id="arTabBg7"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="976px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn7" id="arTabBtn7" onClick="onTab7"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="1128px 0px" size="146px 40px" name="arTabBg8" id="arTabBg8"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="1128px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn8" id="arTabBtn8" onClick="onTab8"/>
+            <Button profile="ARTabArrow" position="1282px 0px" size="40px 40px"
+                    name="arTabNext" id="arTabNext" onClick="onTabNext" />
         </Bitmap>
 
         <!-- ROW 2: THE SELECTORS, LEFT ALIGNED under the tabs.
@@ -109,6 +154,21 @@
                                  onClick="onFilterChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
             </Bitmap>
+            <!-- THE ANIMALS / BREEDS SELECTOR (2026-09-27), shown only on the copy of this page
+                 that sits under the Overview's HUSBANDRY REDUX tab, where the strip above is the
+                 Overview's own. Right aligned so it never meets the period or filter selectors:
+                 1172+146=1318, 1318+146=1464, and 1464 + 16 = 1480. The base game's tab profiles,
+                 background declared before its button so the label sits on it. -->
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg" visible="false"
+                             position="1172px 0px" size="146px 40px" name="arViewBg1" id="arViewBg1"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="1172px 0px" size="146px 40px"
+                    textAutoWidth="false" visible="false" text="$l10n_ar_hi_view_groups"
+                    name="arViewBtn1" id="arViewBtn1" onClick="onViewAnimals"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg" visible="false"
+                             position="1318px 0px" size="146px 40px" name="arViewBg2" id="arViewBg2"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="1318px 0px" size="146px 40px"
+                    textAutoWidth="false" visible="false" text="$l10n_ar_hi_view_breeds"
+                    name="arViewBtn2" id="arViewBtn2" onClick="onViewBreeds"/>
         </Bitmap>
 
         <!-- ============================================================
@@ -119,16 +179,14 @@
              list moved down one row (-46 to -92) so the selector strip above them
              can span the page too, which also lines the list up with the panel.
 
-             RECOMMENDATION is the widest column and sits LAST, because it is the
-             conclusion the ones before it argue for: the eye reads the facts, then
-             the verdict. 204px at 12px is about 34 characters, which is the budget
-             every string in REC_TEXT is written to.
+             The RECOMMENDATION column that sat last (1260..1464) was removed on
+             2026-09-28: advice is per BREED now and lives on the breed tables.
              The width came off the columns that had slack rather than evenly:
              BARN 300 to 230 still holds "Cow Barn With Feeding Robot (Lely)", and
              REPRODUCTION 200 to 140 still holds "breeding - due 9 mo".
              16+24=40 | 48+170=218 | 226+230=456 | 464+70=534 | 542+70=612
              | 620+80=700 | 708+140=848 | 856+120=976 | 984+120=1104
-             | 1112+140=1252 | 1260+204=1464, and 1464 + 16 = 1480.
+             | 1112+140=1252, ending at 1252.
              ============================================================ -->
         <Bitmap profile="ARList" id="groupHeaderRow" position="0px -92px" size="1480px 40px"
                 visible="false">
@@ -150,11 +208,6 @@
                   text="$l10n_ar_hi_col_change"/>
             <Text profile="ARHeaderRight" position="1112px 0px" size="140px 40px" textSize="11px"
                   text="$l10n_ar_hi_col_total"/>
-            <!-- NAMED AND ID'd so the Herd Adviser setting can hide it. It is the
-                 LAST column, so hiding it leaves no gap and nothing has to re-tile:
-                 the table simply ends at 1260 instead of 1464. -->
-            <Text profile="ARHeaderLeft" position="1260px 0px" size="204px 40px" textSize="11px"
-                  name="ghRec" id="ghRec" text="$l10n_ar_hi_col_rec"/>
         <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px"/>
         </Bitmap>
         <GuiElement profile="ARList" id="groupListBox" position="0px -136px" size="1480px 674px" visible="false">
@@ -171,7 +224,6 @@
                     <Text profile="ARRowCellR" position="856px 0px" size="120px 42px" textSize="12px" name="giEach"/>
                     <Text profile="ARRowCellR" position="984px 0px" size="120px 42px" textSize="12px" name="giChange"/>
                     <Text profile="ARRowCellR" position="1112px 0px" size="140px 42px" textSize="12px" name="giTotal"/>
-                    <Text profile="ARRowCell" position="1260px 0px" size="204px 42px" textSize="12px" name="giRec"/>
                 </ListItem>
                 </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px"
@@ -242,6 +294,13 @@
         <Bitmap profile="ARList" position="205px -92px" size="1275px 40px" id="panelHeader" name="panelHeader" visible="false">
             <Text profile="ARHeaderLeft" position="16px 0px" size="700px 40px" textSize="11px"
                   text="$l10n_ar_hi_panelTitle" />
+            <!-- ADVANCED FEEDING, PER BARN (Pigs tab only). Shown and labelled by
+                 HerdInspectorPage:updateFeedToggle; the note replaces the button when
+                 DR is not feeding animals at all. -->
+            <Button profile="ARRowButton" position="1060px 8px" size="200px 24px" id="feedToggle"
+                    text="$l10n_ar_hi_feed_on" onClick="onFeedToggle" visible="false"/>
+            <Text profile="ARHeaderLeft" position="760px 0px" size="500px 40px" textSize="11px"
+                  id="feedToggleNote" text="$l10n_ar_hi_feed_drOff" visible="false"/>
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
@@ -257,7 +316,7 @@
                  108px at 11px is about 19 characters, so it wraps to two lines; the
                  provider writes to a 36-character budget.
                  16+118=134 | 142+108=250, the block's own right edge. -->
-            <Text profile="ARBarLabel" position="142px 96px" size="108px 30px" textSize="11px" textMaxNumLines="2" name="apHerdAdvice" />
+            <Text profile="ARBarLabel" position="142px 96px" size="108px 30px" textSize="11px" textMaxNumLines="3" name="apHerdAdvice" />
             <Bitmap position="16px 84px" size="230px 8px" name="apCapBg"
                     imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85" />
             <Bitmap position="16px 84px" size="230px 8px" name="apCapFill"
@@ -377,38 +436,40 @@
              proved for stepping a ring in a row. Purpose IS a ring of three
              (producer, breeder, unset), which is exactly what a pair of arrows is
              for and what a two state switch could not express. -->
-        <Bitmap profile="ARList" id="breedHeaderRow" position="205px -92px" size="1275px 40px"
+        <Bitmap profile="ARList" id="breedHeaderRow" position="0px -92px" size="1480px 40px"
                 visible="false">
             <Text profile="ARHeaderLeft"  position="48px 0px"   size="200px 40px" textSize="11px" text="$l10n_ar_hi_col_breed"/>
-            <Text profile="ARHeaderRight" position="256px 0px"  size="70px 40px"  textSize="11px" text="$l10n_ar_hi_col_count"/>
-            <Text profile="ARHeaderLeft"  position="334px 0px"  size="190px 40px" textSize="11px" text="$l10n_ar_hi_col_keptFor"/>
-            <Text profile="ARHeaderLeft"  position="532px 0px"  size="240px 40px" textSize="11px" text="$l10n_ar_hi_col_advice"/>
-            <Text profile="ARHeaderRight" position="780px 0px"  size="100px 40px" textSize="11px" text="$l10n_ar_hi_col_output"/>
-            <Text profile="ARHeaderRight" position="888px 0px"  size="110px 40px" textSize="11px" text="$l10n_ar_hi_col_asProducer"/>
-            <Text profile="ARHeaderRight" position="1006px 0px" size="110px 40px" textSize="11px" text="$l10n_ar_hi_col_asBreeder"/>
-            <Text profile="ARHeaderLeft"  position="1124px 0px" size="139px 40px" textSize="11px" text="$l10n_ar_hi_col_whereFrom"/>
+            <Text profile="ARHeaderLeft"  position="298px 0px"  size="138px 40px" textSize="11px" text="$l10n_ar_hi_col_barn"/>
+            <Text profile="ARHeaderRight" position="444px 0px"  size="70px 40px"  textSize="11px" text="$l10n_ar_hi_col_count"/>
+            <Text profile="ARHeaderLeft"  position="522px 0px"  size="190px 40px" textSize="11px" text="$l10n_ar_hi_col_keptFor"/>
+            <Text profile="ARHeaderLeft"  position="720px 0px"  size="240px 40px" textSize="11px" text="$l10n_ar_hi_col_action"/>
+            <Text profile="ARHeaderRight" position="968px 0px"  size="100px 40px" textSize="11px" text="$l10n_ar_hi_col_output"/>
+            <Text profile="ARHeaderRight" position="1076px 0px"  size="110px 40px" textSize="11px" text="$l10n_ar_hi_col_asProducer"/>
+            <Text profile="ARHeaderRight" position="1194px 0px" size="110px 40px" textSize="11px" text="$l10n_ar_hi_col_asBreeder"/>
+            <Text profile="ARHeaderLeft"  position="1312px 0px" size="139px 40px" textSize="11px" text="$l10n_ar_hi_col_whereFrom"/>
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px"/>
         </Bitmap>
-        <GuiElement profile="ARList" id="breedListBox" position="205px -136px" size="1275px 674px" visible="false">
+        <GuiElement profile="ARList" id="breedListBox" position="0px -136px" size="1480px 674px" visible="false">
             <SmoothList profile="ARList" id="breedList" onClick="onBreedClick"
                         onSelectionChanged="onListSelectionChanged"
                         focusChangeTop="nil" focusChangeBottom="nil"
-                        position="0px 0px" size="1275px 674px">
-                <ListItem profile="ARListItemStats" name="breedRow" size="1275px 42px">
+                        position="0px 0px" size="1480px 674px">
+                <ListItem profile="ARListItemStats" name="breedRow" size="1480px 42px">
                     <Bitmap name="brIcon" position="12px 9px" size="24px 24px" visible="false"/>
                     <Text profile="ARRowCell"  position="48px 0px"   size="200px 42px" textSize="12px" name="brName"/>
-                    <Text profile="ARRowCellR" position="256px 0px"  size="70px 42px"  textSize="12px" name="brCount"/>
-                    <!-- the label sits between the arrows, and the arrows are
-                         declared AFTER it so they take the mouse first (children are
-                         visited in reverse) and draw over it if they overlap. -->
-                    <Text profile="ARRowCell"  position="378px 0px"  size="96px 42px"  textSize="12px" name="brPurpose"/>
-                    <Button profile="fs25_multiTextOptionLeft" position="334px 0px" name="brPrev" onClick="onBreedPrev"/>
-                    <Button profile="ARRowArrowRight"          position="478px 0px" name="brNext" onClick="onBreedNext"/>
-                    <Text profile="ARRowCell"  position="532px 0px"  size="240px 42px" textSize="12px" name="brAdvice"/>
-                    <Text profile="ARRowCellR" position="780px 0px"  size="100px 42px" textSize="12px" name="brEarns"/>
-                    <Text profile="ARRowCellR" position="888px 0px"  size="110px 42px" textSize="12px" name="brKeeps"/>
-                    <Text profile="ARRowCellR" position="1006px 0px" size="110px 42px" textSize="12px" name="brCalf"/>
-                    <Text profile="ARRowCell"  position="1124px 0px" size="139px 42px" textSize="12px" name="brTerms"/>
+                    <Bitmap name="brBarnIcon" position="256px 6px" size="36px 30px" imageColor="1 1 1 1" visible="false"/>
+                    <Text profile="ARRowCell"  position="298px 0px"  size="138px 42px" textSize="12px" name="brBarn"/>
+                    <Text profile="ARRowCellR" position="444px 0px"  size="70px 42px"  textSize="12px" name="brCount"/>
+                    <!-- READ ONLY since 2026-09-28: the purpose is set on the animal-type
+                         tabs, so this cell reports it and carries no arrows. It takes the
+                         whole column the arrow pair used to share. -->
+                    <Text profile="ARRowCell"  position="522px 0px"  size="190px 42px" textSize="12px" name="brPurpose"/>
+                    <Text profile="ARRowCell"  position="720px 0px"  size="240px 42px" textSize="11px"
+                          textMaxNumLines="2" name="brAdvice"/>
+                    <Text profile="ARRowCellR" position="968px 0px"  size="100px 42px" textSize="12px" name="brEarns"/>
+                    <Text profile="ARRowCellR" position="1076px 0px"  size="110px 42px" textSize="12px" name="brKeeps"/>
+                    <Text profile="ARRowCellR" position="1194px 0px" size="110px 42px" textSize="12px" name="brCalf"/>
+                    <Text profile="ARRowCell"  position="1312px 0px" size="139px 42px" textSize="12px" name="brTerms"/>
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px"
@@ -457,6 +518,110 @@
             </ThreePartBitmap>
         </GuiElement>
 
+        <!-- ============================================================
+             THE PIGS TAB SPLITS THE ANIMALS TABLE IN TWO (2026-09-13).
+             Same 680px column as the barn view's single table, same top (-286)
+             and same bottom (-810), so nothing beside it moves.
+
+             UPPER: BREEDS. A header and exactly THREE rows (3 x 42 = 126), which
+             is every pig breed the base game declares. Columns BREED, COUNT, KEPT
+             FOR (the purpose arrows) and ADVICE, reusing the Breeds view's own cell
+             names so one populate path serves both.
+             The first two columns sit at the same x and width as ANIMAL and COUNT
+             in the table below, so the two tables read as one column set.
+             16+24=40 | 48+128=176 | 184+42=226 | arrows 234 and 352 around a
+             label at 276+72=348 | ADVICE 400+170=570, two lines at 11px | TRADER
+             button from 578, sized to its label, +16 margin = 680.
+
+             LOWER: ANIMALS, the barn view's columns with GROUP VALUE replaced by a
+             BUY and a SELL button per row (2026-09-13), taking the rest of the
+             height: 8px gap under the breeds list, header -464, list -508 to -810.
+             The breeds table's ADVICE column became an AUTO TRADER button the same
+             day.
+             EACH BUTTON SIZES ITSELF TO ITS LABEL (ARRowButton: textAutoWidth), so
+             the widths here are placeholders the button replaces at load. They are
+             24px tall and 9px up, centred in the 42px row. SELL is re-placed at
+             populate just after BUY's real width, so a longer translation of BUY
+             cannot run into it.
+             ============================================================ -->
+        <Bitmap profile="ARList" id="pigBreedHeaderRow" position="205px -286px" size="680px 40px"
+                visible="false">
+            <Text profile="ARHeaderLeft"  position="48px 0px"  size="128px 40px" textSize="11px" text="$l10n_ar_hi_col_breed"/>
+            <Text profile="ARHeaderRight" position="184px 0px" size="42px 40px"  textSize="11px" text="$l10n_ar_hi_col_count"/>
+            <Text profile="ARHeaderLeft"  position="234px 0px" size="158px 40px" textSize="11px" text="$l10n_ar_hi_col_keptFor"/>
+            <Text profile="ARHeaderLeft"  position="400px 0px" size="170px 40px" textSize="11px" text="$l10n_ar_hi_col_action"/>
+            <Text profile="ARHeaderLeft"  position="578px 0px" size="86px 40px" textSize="11px" text="$l10n_ar_hi_btn_schedule"/>
+            <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px"/>
+        </Bitmap>
+        <GuiElement profile="ARList" id="pigBreedListBox" position="205px -330px" size="680px 126px" visible="false">
+            <SmoothList profile="ARList" id="pigBreedList" onClick="onBreedClick"
+                        onSelectionChanged="onListSelectionChanged"
+                        focusChangeTop="nil" focusChangeBottom="nil"
+                        position="0px 0px" size="680px 126px">
+                <ListItem profile="ARListItemStats" name="breedRow" size="680px 42px">
+                    <Bitmap name="brIcon" position="16px 9px" size="24px 24px" visible="false"/>
+                    <Text profile="ARRowCell"  position="48px 0px"  size="128px 42px" textSize="12px" name="brName"/>
+                    <Text profile="ARRowCellR" position="184px 0px" size="42px 42px"  textSize="12px" name="brCount"/>
+                    <!-- label first, arrows after it, as in the Breeds view: the arrows
+                         take the mouse first and draw over the label if they overlap. -->
+                    <Text profile="ARRowCell"  position="276px 0px" size="72px 42px"  textSize="12px" name="brPurpose"/>
+                    <Button profile="fs25_multiTextOptionLeft" position="234px 0px" name="brPrev" onClick="onBreedPrev"/>
+                    <Button profile="ARRowArrowRight"          position="352px 0px" name="brNext" onClick="onBreedNext"/>
+                    <Text profile="ARRowCell"  position="400px 0px" size="170px 42px" textSize="11px"
+                          textMaxNumLines="2" name="brAdvice"/>
+                    <Button profile="ARRowButton" position="578px 9px" size="70px 24px"
+                            text="$l10n_ar_hi_btn_trader" name="brTrader" onClick="onBreedTrader"/>
+                </ListItem>
+            </SmoothList>
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px"
+                             size="12px 126px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 118px"
+                        dataElementId="pigBreedList" id="pigBreedListSlider" />
+            </ThreePartBitmap>
+        </GuiElement>
+
+        <Bitmap profile="ARList" id="pigGroupHeaderRow" position="205px -464px" size="680px 40px"
+                visible="false">
+            <Text profile="ARHeaderLeft" position="48px 0px" size="128px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_animal"/>
+            <Text profile="ARHeaderRight" position="184px 0px" size="42px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_count"/>
+            <Text profile="ARHeaderRight" position="234px 0px" size="46px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_age"/>
+            <Text profile="ARHeaderRight" position="288px 0px" size="62px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_health"/>
+            <Text profile="ARHeaderLeft" position="358px 0px" size="118px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_repro"/>
+            <Text profile="ARHeaderRight" position="484px 0px" size="76px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_change"/>
+            <Text profile="ARHeaderLeft" position="568px 0px" size="96px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_trade"/>
+            <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px"/>
+        </Bitmap>
+        <GuiElement profile="ARList" id="pigGroupListBox" position="205px -508px" size="680px 302px" visible="false">
+            <SmoothList profile="ARList" id="pigGroupList" focusChangeTop="nil" focusChangeBottom="nil"
+                        position="0px 0px" size="680px 302px">
+                <ListItem profile="ARListItemStats" name="rowTemplate" size="680px 42px">
+                    <Bitmap name="fillIcon" position="16px 9px" size="24px 24px" visible="false"/>
+                    <Text profile="ARRowCell" position="48px 0px" size="128px 42px" textSize="12px" name="giAnimal"/>
+                    <Text profile="ARRowCellR" position="184px 0px" size="42px 42px" textSize="12px" name="giCount"/>
+                    <Text profile="ARRowCellR" position="234px 0px" size="46px 42px" textSize="12px" name="giAge"/>
+                    <Text profile="ARRowCellR" position="288px 0px" size="62px 42px" textSize="12px" name="giHealth"/>
+                    <Text profile="ARRowCell" position="358px 0px" size="118px 42px" textSize="12px" name="giRepro"/>
+                    <Text profile="ARRowCellR" position="484px 0px" size="76px 42px" textSize="12px" name="giChange"/>
+                    <Button profile="ARRowButton" position="568px 9px" size="40px 24px"
+                            text="$l10n_ar_td_buyNow" name="giBuy" onClick="onGroupBuy"/>
+                    <Button profile="ARRowButton" position="614px 9px" size="44px 24px"
+                            text="$l10n_ar_td_sellNow" name="giSell" onClick="onGroupSell"/>
+                </ListItem>
+            </SmoothList>
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px"
+                             size="12px 302px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 294px"
+                        dataElementId="pigGroupList" id="pigGroupListSlider" />
+            </ThreePartBitmap>
+        </GuiElement>
+
         <!-- bottom right, upper: INPUTS, one row per PRODUCT with the food group
              it answers to. MET is deliberately absent: it is a property of the
              GROUP, and repeating it on every product would read as a claim about
@@ -467,45 +632,99 @@
              product would cost - so it compares the ways of feeding a tier.
              COST NOW is what is actually being eaten, which is 0 for a product
              the barn does not hold and for a whole tier a better one is covering.
-             16+24=40 | 48+120=168 | 176+96=272 | 280+70=350 | 358+58=416 | 424+70=494
-             | 502+69=571, +16 margin = 587.
+             USED was added 2026-09-10 and the whole band was re-pitched for it: the
+             table already ended at the screen edge (893+587=1480), so the column had
+             to come out of the others rather than out of spare width.
+             16+24=40 | 48+100=148 | 156+68=224 | 232+62=294 | 302+54=356
+             | 364+62=426 | 434+66=500 | 508+63=571, +16 margin = 587.
              IT TAKES THE WHOLE RIGHT COLUMN NOW. Outputs used to sit beneath it;
              they moved left, so this runs the full height - and the spare rows are
              deliberately HERE rather than on the other two, because a modded barn
              can declare many food types while its groups and its outputs cannot. -->
         <Bitmap profile="ARList" id="inputHeaderRow" position="893px -286px" size="587px 40px"
                 visible="false">
-            <Text profile="ARHeaderLeft" position="48px 0px" size="120px 40px" textSize="11px"
-                  text="$l10n_ar_hi_col_product"/>
-            <Text profile="ARHeaderLeft" position="176px 0px" size="96px 40px" textSize="11px"
+            <Text profile="ARHeaderLeft" position="48px 0px" size="100px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_productIn"/>
+            <Text profile="ARHeaderLeft" position="156px 0px" size="68px 40px" textSize="11px"
                   text="$l10n_ar_hi_col_foodGroup"/>
-            <Text profile="ARHeaderRight" position="280px 0px" size="70px 40px" textSize="11px"
+            <Text profile="ARHeaderRight" position="232px 0px" size="62px 40px" textSize="11px"
                   text="$l10n_ar_hi_col_held"/>
-            <Text profile="ARHeaderRight" position="358px 0px" size="58px 40px" textSize="11px"
+            <Text profile="ARHeaderRight" position="302px 0px" size="54px 40px" textSize="11px"
                   text="$l10n_ar_hi_col_needs"/>
-            <Text profile="ARHeaderRight" position="424px 0px" size="70px 40px" textSize="11px"
+            <Text profile="ARHeaderRight" position="364px 0px" size="62px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_used"/>
+            <Text profile="ARHeaderRight" position="434px 0px" size="66px 40px" textSize="11px"
                   text="$l10n_ar_hi_col_costPerH"/>
-            <Text profile="ARHeaderRight" position="502px 0px" size="69px 40px" textSize="11px"
+            <Text profile="ARHeaderRight" position="508px 0px" size="63px 40px" textSize="11px"
                   text="$l10n_ar_hi_col_costNow"/>
         <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px"/>
         </Bitmap>
-        <GuiElement profile="ARList" id="inputListBox" position="893px -330px" size="587px 260px" visible="false">
+        <GuiElement profile="ARList" id="inputListBox" position="893px -330px" size="587px 164px" visible="false">
             <SmoothList profile="ARList" id="inputList" focusChangeTop="nil" focusChangeBottom="nil"
-                        position="0px 0px" size="587px 260px">
+                        position="0px 0px" size="587px 164px">
                 <ListItem profile="ARListItemStats" name="rowTemplate" size="587px 42px">
                     <Bitmap name="fillIcon" position="16px 9px" size="24px 24px" visible="false"/>
-                    <Text profile="ARRowCell" position="48px 0px" size="120px 42px" textSize="12px" name="inProduct"/>
-                    <Text profile="ARRowCell" position="176px 0px" size="96px 42px" textSize="12px" name="inGroup"/>
-                    <Text profile="ARRowCellR" position="280px 0px" size="70px 42px" textSize="12px" name="inHeld"/>
-                    <Text profile="ARRowCellR" position="358px 0px" size="58px 42px" textSize="12px" name="inNeeds"/>
-                    <Text profile="ARRowCellR" position="424px 0px" size="70px 42px" textSize="12px" name="inCost"/>
-                    <Text profile="ARRowCellR" position="502px 0px" size="69px 42px" textSize="12px" name="inActual"/>
+                    <Text profile="ARRowCell" position="48px 0px" size="100px 42px" textSize="12px" name="inProduct"/>
+                    <Text profile="ARRowCell" position="156px 0px" size="68px 42px" textSize="12px" name="inGroup"/>
+                    <Text profile="ARRowCellR" position="232px 0px" size="62px 42px" textSize="12px" name="inHeld"/>
+                    <Text profile="ARRowCellR" position="302px 0px" size="54px 42px" textSize="12px" name="inNeeds"/>
+                    <Text profile="ARRowCellR" position="364px 0px" size="62px 42px" textSize="12px" name="inUsed"/>
+                    <Text profile="ARRowCellR" position="434px 0px" size="66px 42px" textSize="12px" name="inCost"/>
+                    <Text profile="ARRowCellR" position="508px 0px" size="63px 42px" textSize="12px" name="inActual"/>
                 </ListItem>
                 </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px"
-                             size="12px 260px" with="anchorTopRight">
-                <Slider profile="fs25_listSlider" size="6px 252px"
+                             size="12px 164px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 156px"
                         dataElementId="inputList" id="inputListSlider" />
+            </ThreePartBitmap>
+        </GuiElement>
+
+        <!-- bottom right, MIDDLE: PRODUCED. Feed the barn makes for itself, and did
+             not buy: a feeding robot's mix, and grass off a grazeable meadow.
+             Reported 2026-09-09. TMR was being costed as though the farm bought it,
+             while the four ingredients that actually make it carried nothing and
+             mineral feed had no row anywhere at all. Grass had the same shape one
+             step over: the cost model has charged nothing for grazing since the
+             grazing correction, yet the inputs table still showed it priced, so the
+             display and the economics disagreed. Both are the same rule now, which
+             is why one table holds both.
+             VALUE, NOT COST, and it is not part of the barn's running cost. For the
+             mix that would double count the ingredients above; for grazing there was
+             never anything to count.
+             16+24=40 | 48+120=168 | 176+96=272 | 280+70=350 | 358+90=448 |
+             456+115=571, +16 margin = 587. Same product and group columns as the
+             INPUTS table above it, so the two line up down the page. -->
+        <Bitmap profile="ARList" id="madeHeaderRow" position="893px -502px" size="587px 40px"
+                visible="false">
+            <Text profile="ARHeaderLeft" position="48px 0px" size="120px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_produced"/>
+            <Text profile="ARHeaderLeft" position="176px 0px" size="96px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_source"/>
+            <Text profile="ARHeaderRight" position="280px 0px" size="70px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_held"/>
+            <Text profile="ARHeaderRight" position="358px 0px" size="90px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_madeRate"/>
+            <Text profile="ARHeaderRight" position="456px 0px" size="115px 40px" textSize="11px"
+                  text="$l10n_ar_hi_col_sellValue"/>
+        <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px"/>
+        </Bitmap>
+        <GuiElement profile="ARList" id="madeListBox" position="893px -546px" size="587px 84px" visible="false">
+            <SmoothList profile="ARList" id="madeList" focusChangeTop="nil" focusChangeBottom="nil"
+                        position="0px 0px" size="587px 84px">
+                <ListItem profile="ARListItemStats" name="rowTemplate" size="587px 42px">
+                    <Bitmap name="fillIcon" position="16px 9px" size="24px 24px" visible="false"/>
+                    <Text profile="ARRowCell" position="48px 0px" size="120px 42px" textSize="12px" name="mdProduct"/>
+                    <Text profile="ARRowCell" position="176px 0px" size="96px 42px" textSize="12px" name="mdGroup"/>
+                    <Text profile="ARRowCellR" position="280px 0px" size="70px 42px" textSize="12px" name="mdHeld"/>
+                    <Text profile="ARRowCellR" position="358px 0px" size="90px 42px" textSize="12px" name="mdRate"/>
+                    <Text profile="ARRowCellR" position="456px 0px" size="115px 42px" textSize="12px" name="mdValue"/>
+                </ListItem>
+                </SmoothList>
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px"
+                             size="12px 84px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 76px"
+                        dataElementId="madeList" id="madeListSlider" />
             </ThreePartBitmap>
         </GuiElement>
 
@@ -525,10 +744,10 @@
              out", which is the pairing that column is for.
              16+24=40 | 48+150=198 | 206+120=326 | 334+120=454 | 462+109=571,
              +16 margin = 587 -->
-        <Bitmap profile="ARList" id="prodHeaderRow" position="893px -624px" size="587px 40px"
+        <Bitmap profile="ARList" id="prodHeaderRow" position="893px -638px" size="587px 40px"
                 visible="false">
             <Text profile="ARHeaderLeft" position="48px 0px" size="150px 40px" textSize="11px"
-                  text="$l10n_ar_hi_col_product"/>
+                  text="$l10n_ar_hi_col_productOut"/>
             <Text profile="ARHeaderRight" position="206px 0px" size="120px 40px" textSize="11px"
                   text="$l10n_ar_hi_col_held"/>
             <Text profile="ARHeaderRight" position="334px 0px" size="120px 40px" textSize="11px"
@@ -537,9 +756,9 @@
                   text="$l10n_ar_hi_col_sellValue"/>
         <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px"/>
         </Bitmap>
-        <GuiElement profile="ARList" id="prodListBox" position="893px -666px" size="587px 144px" visible="false">
+        <GuiElement profile="ARList" id="prodListBox" position="893px -682px" size="587px 128px" visible="false">
             <SmoothList profile="ARList" id="prodList" focusChangeTop="nil" focusChangeBottom="nil"
-                        position="0px 0px" size="587px 144px">
+                        position="0px 0px" size="587px 128px">
                 <ListItem profile="ARListItemStats" name="rowTemplate" size="587px 42px">
                     <Bitmap name="fillIcon" position="16px 9px" size="24px 24px" visible="false"/>
                     <Text profile="ARRowCell" position="48px 0px" size="150px 42px" textSize="12px" name="pdProduct"/>
@@ -549,8 +768,8 @@
                 </ListItem>
                 </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px"
-                             size="12px 144px" with="anchorTopRight">
-                <Slider profile="fs25_listSlider" size="6px 136px"
+                             size="12px 128px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 120px"
                         dataElementId="prodList" id="prodListSlider" />
             </ThreePartBitmap>
         </GuiElement>

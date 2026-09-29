@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
-<!-- Animal Redux: the SETTINGS page of this mod's own menu.
+<!-- Husbandry Redux: the SETTINGS page of this mod's own menu.
      Only loaded when Distribution Redux is absent; with DR present the same rows
      are registered as a tab on DR's settings page instead (AnimalSettings.install),
      and both read AnimalSettings.rows(), so there is one set of settings.

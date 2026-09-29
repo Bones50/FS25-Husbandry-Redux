@@ -1,4 +1,4 @@
--- Animal Redux -- the SETTINGS page of this mod's own menu.
+-- Husbandry Redux -- the SETTINGS page of this mod's own menu.
 --
 -- ONLY USED WHEN DISTRIBUTION REDUX IS ABSENT. With DR present the same rows are registered as a tab
 -- on DR's settings page (AnimalSettings.install) and this file is never loaded. Both render

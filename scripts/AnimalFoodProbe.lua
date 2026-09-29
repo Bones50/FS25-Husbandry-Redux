@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalFoodProbe.lua  (Animal Redux)  -- TEMPORARY DEV PROBE
+-- AnimalFoodProbe.lua  (Husbandry Redux)  -- TEMPORARY DEV PROBE
 --
 -- Measures what the base game's AnimalFoodSystem:consumeFood actually rewards,
 -- because it cannot be READ: AnimalFoodSystem is NOT in the shipped SDK source
@@ -241,7 +241,7 @@ function AnimalFoodProbe.probeBarn(barn, demand)
     end
 
     -- ---- what Distribution Redux would do today --------------------------
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     if SD ~= nil and SD._foodQualityMap ~= nil then
         local okQ, qmap = pcall(SD._foodQualityMap, p)
         if okQ and qmap ~= nil then
@@ -534,7 +534,7 @@ local function xy(t)
 end
 
 function AnimalFoodProbe.runMenuProbe()
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     local menu = SD ~= nil and SD._menu or nil
     if menu == nil then out("DR's menu is not registered"); return end
     local pe = menu.pagingElement
@@ -768,6 +768,8 @@ function AnimalFoodProbe.register()
         "consoleCommandTradeOpen", AnimalFoodProbe)
     addConsoleCommand("arReproProbe", "Reproduction yield + the health/age price terms (clone-only)",
         "consoleCommandRepro", AnimalFoodProbe)
+    addConsoleCommand("arHealthProbe", "What food factor SUSTAINS what health? (clone-only)",
+        "consoleCommandHealth", AnimalFoodProbe)
     addConsoleCommand("arSellProbe", "Can a mod sell animals headlessly? (dry run; add 'go' to try one)",
         "consoleCommandSell", AnimalFoodProbe)
     addConsoleCommand("arSellDiff", "What does the GUI set on a sell controller that we do not?",
@@ -1249,7 +1251,7 @@ end
 -- The one side-effecting half, kept as its own command so it cannot fire by
 -- accident. It opens the base game's OWN screen (the same call the animal
 -- loading trigger makes, AnimalLoadingTrigger.lua:243) and reports which
--- controller class the game chose. That is what decides whether Animal Redux's
+-- controller class the game chose. That is what decides whether Husbandry Redux's
 -- Trade view can be "rules plus a button" rather than a reimplemented
 -- transaction.
 --
@@ -1872,6 +1874,508 @@ function AnimalFoodProbe:consoleCommandRepro(fragment)
     return "arReproProbe done -- see log.txt"
 end
 
+-- ============================================================================
+-- arHealthProbe -- WHAT FOOD FACTOR SUSTAINS WHAT HEALTH?
+--
+--   arHealthProbe                 : the biggest owned barn
+--   arHealthProbe <name fragment> : that barn
+--
+-- WHY THIS EXISTS. The adviser cannot recommend a feed mix without knowing what
+-- health that mix HOLDS, and that is the one number the model has never had.
+-- 11.9 sampled the three constants (increase/h, decrease/h, thresholdFactor)
+-- but NOT THE SHAPE of the update, and the two candidate shapes give opposite
+-- advice:
+--
+--   FLAT    health moves a fixed +increase / -decrease every hour, so it has no
+--           intermediate resting point at all: at or above the threshold it
+--           walks to 100 and stays there, below it it walks to 0. Health is then
+--           FREE above the threshold and the whole recommendation collapses to
+--           "buy the cheapest mix that clears it".
+--   SCALED  the step shrinks as the factor approaches the threshold, so health
+--           settles part way and every mix has its own sustained health. The
+--           recommendation must then trade health against feed cost.
+--
+-- 32.10 assumed SCALED ("does hay at 0.80 hold health at 100 or let it settle
+-- at 85") without testing it. A fixed +10/-25 cannot produce 85, so the question
+-- as posed presumes its own answer. This settles it by measurement.
+--
+-- IT ALSO MEASURES THE THRESHOLD, which is only declared for horses: 11.9 read
+-- chicken 0.2 against the horses' 0.45 and nothing else has been sampled. The
+-- sign flip in sweep A gives it for whatever barn this is pointed at.
+--
+-- AnimalCluster is REFERENCED in ~10 places in the shipped source and DEFINED
+-- nowhere, and nothing under data/ declares a health element outside the horses
+-- -- so neither the shape nor the non-horse defaults can be read. This is the
+-- only instrument available.
+--
+-- READ-ONLY with respect to the save: every sample is a throwaway clone, behind
+-- the same gate arReproProbe uses. REMOVE with the other probes.
+-- ============================================================================
+
+local function hout(fmt, ...)
+    local ok, msg = pcall(string.format, fmt, ...)
+    print("[arHealth] " .. (ok and msg or tostring(fmt)))
+end
+
+-- One hour of the game's own health update, on a clone that is thrown away.
+--
+-- THE HEADCOUNT IS ALWAYS RESTORED FIRST. clone() copies identity but zeroes
+-- numAnimals (11.9), and an empty cluster is exactly the thing a caller in the
+-- base game would skip -- so a sweep that forgot this could measure "no
+-- movement" and report a flat model when it had simply handed the game nothing
+-- to update.
+local function healthStep(cl, startHealth, f, head)
+    local c = freshClone(cl)
+    if c == nil or c.updateHealth == nil then return nil end
+    c.numAnimals = (head ~= nil and head > 0) and head or 10
+    c.health = startHealth
+    local ok = pcall(c.updateHealth, c, f)
+    if not ok then return nil end
+    return c.health
+end
+
+-- The same call repeated on ONE clone, which is what makes it a trajectory
+-- rather than N independent first steps.
+local function healthTrajectory(cl, startHealth, f, hours, head)
+    local c = freshClone(cl)
+    if c == nil or c.updateHealth == nil then return nil end
+    c.numAnimals = (head ~= nil and head > 0) and head or 10
+    c.health = startHealth
+    local path = { c.health }
+    for _ = 1, hours do
+        local ok = pcall(c.updateHealth, c, f)
+        if not ok then return path end
+        path[#path + 1] = c.health
+    end
+    return path
+end
+
+-- ---------------------------------------------------------------------------
+-- SWEEP A -- the shape, and the threshold.
+--
+-- Start health is 50 so a single step can move either way without meeting a
+-- bound: with the known +10 / -25 constants nothing clamps, and any sample that
+-- DOES land exactly on 0 or 100 is excluded from the uniformity test rather than
+-- being allowed to masquerade as a smaller step.
+-- The subType's own health constants, so sweep A can CHECK ITS MEASUREMENT
+-- against them instead of merely printing both and leaving the reader to
+-- compare. Returns nil outside a running game, where the fit is simply skipped.
+function AnimalFoodProbe.healthConsts(sti)
+    local asys = g_currentMission ~= nil and g_currentMission.animalSystem or nil
+    if asys == nil or asys.getSubTypeByIndex == nil or sti == nil then return nil end
+    local okS, st = pcall(asys.getSubTypeByIndex, asys, sti)
+    if not okS or type(st) ~= "table" then return nil end
+    local inc, dec, thr = st.healthIncreaseHour, st.healthDecreaseHour, st.healthThresholdFactor
+    if type(inc) ~= "number" or type(dec) ~= "number" or type(thr) ~= "number" then return nil end
+    return inc, dec, thr, tostring(st.name)
+end
+
+function AnimalFoodProbe.sweepHealthRate(cl, head)
+    local START_H = 50
+    local FS = { 0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30,
+                 0.35, 0.40, 0.45, 0.50, 0.60, 0.80, 1.00 }
+
+    hout("")
+    hout("SWEEP A -- STEP SIZE vs FOOD FACTOR   (one hour, health starts at %d)", START_H)
+    hout("  %8s %10s %10s %9s", "food f", "before", "after 1h", "delta")
+
+    local pts = {}
+    local ups, downs = {}, {}
+    local moved, samples = 0, 0
+
+    for _, f in ipairs(FS) do
+        local after = healthStep(cl, START_H, f, head)
+        if after == nil then
+            hout("  %8.2f %10d %10s %9s", f, START_H, "-", "call failed")
+        else
+            samples = samples + 1
+            local d = after - START_H
+            if d ~= 0 then moved = moved + 1 end
+            hout("  %8.2f %10d %10.2f %+9.2f", f, START_H, after, d)
+
+            local clamped = (after <= 0) or (after >= 100)
+            pts[#pts + 1] = { f = f, d = d, clamped = clamped }
+            if d > 0 then
+                if not clamped then ups[#ups + 1] = d end
+            elseif d < 0 then
+                if not clamped then downs[#downs + 1] = -d end
+            end
+        end
+    end
+
+    -- A DIAGNOSTIC THAT SAYS NOTHING IS EVIDENCE, AND IT MUST NOT READ AS A
+    -- FINDING. Zero movement across every factor means the call is not doing what
+    -- this probe assumes -- a different signature, a guard we have not met -- and
+    -- reporting that as "the model is flat at zero" would be a wrong answer
+    -- delivered with confidence.
+    if samples == 0 then
+        hout("")
+        hout("  *** updateHealth() could not be called at all. Nothing was measured.")
+        hout("  *** This is NOT a finding about the model -- see the dump above for")
+        hout("  *** what the cluster actually exposes.")
+        return nil, "UNCALLABLE"
+    end
+    if moved == 0 then
+        hout("")
+        hout("  *** health did not move at ANY food factor, on %d samples.", samples)
+        hout("  *** The call ran, so the signature is probably right and something")
+        hout("  *** ELSE gates it. Do NOT read this as a flat model.")
+        return nil, "NO MOVEMENT"
+    end
+
+    local function uniform(t)
+        if #t < 2 then return true, (t[1] or 0), (t[1] or 0) end
+        local lo, hi = t[1], t[1]
+        for _, v in ipairs(t) do
+            if v < lo then lo = v end
+            if v > hi then hi = v end
+        end
+        return (hi - lo) < 0.01, lo, hi
+    end
+
+    local upFlat, upLo, upHi = uniform(ups)
+    local dnFlat, dnLo, dnHi = uniform(downs)
+
+    hout("")
+    if #ups > 0 then
+        hout("  rises: %d sample(s), %.2f .. %.2f per hour", #ups, upLo, upHi)
+    else
+        hout("  rises: none -- no food factor tested held health up")
+    end
+    if #downs > 0 then
+        hout("  falls: %d sample(s), %.2f .. %.2f per hour", #downs, dnLo, dnHi)
+    else
+        hout("  falls: none -- no food factor tested let health down")
+    end
+
+    -- THE VERDICT IS ABOUT THE RATE, AND ONLY THE RATE.
+    --
+    -- An earlier version had SCALED also assert "health settles part way and each
+    -- mix sustains its own health". THAT DOES NOT FOLLOW and the first real run
+    -- disproved it: the base game's step is scaled in the FOOD FACTOR and flat in
+    -- HEALTH, so health does not settle at all -- it climbs at a constant rate to
+    -- 100, and only the TIME TO GET THERE varies. Whether health settles is
+    -- SWEEP C's question, because settling requires the step to depend on health.
+    local verdict
+    if #ups == 0 or #downs == 0 then
+        verdict = "ONE-SIDED"
+        hout("  every sample moved the same way: the sweep never crossed the threshold.")
+        hout("  Widen FS -- the shape cannot be judged from only one side of it.")
+    elseif upFlat and dnFlat then
+        verdict = "FLAT"
+        hout("  VERDICT: FLAT rate. The step does not vary with the food factor, so")
+        hout("  every factor on one side moves health at the same speed.")
+        hout("  Health is FREE above the threshold -- the recommendation is simply")
+        hout("  'the cheapest mix that clears it'. Sweep C confirms the destination.")
+    else
+        verdict = "SCALED"
+        hout("  VERDICT: SCALED rate. The step VARIES with the food factor, so a")
+        hout("  richer mix moves health FASTER. That alone does NOT mean health")
+        hout("  settles part way -- it settles only if the step also depends on")
+        hout("  CURRENT health, which is sweep C. Read C before concluding.")
+    end
+
+    -- THE THRESHOLD IS THE SIGN CHANGE, NOT THE FIRST RISE.
+    --
+    -- The first version took the first f with delta > 0 and reported 0.30 for a
+    -- subtype that declares 0.20 -- because the engine FLOORS the result, so the
+    -- 0.625/h increment at f=0.25 truncates to zero and reads as "no rise". That
+    -- overstated the threshold on every species. The sign change is the real
+    -- boundary and it reproduces the declared value exactly.
+    local thr, lastNeg = nil, nil
+    for _, p in ipairs(pts) do
+        if p.d >= 0 then
+            if thr == nil then thr = p.f end
+        elseif thr == nil then
+            lastNeg = p.f
+        end
+    end
+
+    if thr ~= nil then
+        hout("")
+        hout("  THRESHOLD (sign change): health stopped falling at f = %.2f", thr)
+        if lastNeg ~= nil then
+            hout("  and was still falling at %.2f, so it lies in (%.2f .. %.2f].",
+                 lastNeg, lastNeg, thr)
+        end
+    end
+
+    -- THE DEAD ZONE, and it is the finding with the sharpest consequence.
+    --
+    -- Between the threshold and the factor whose FLOORED increment first reaches
+    -- 1, health neither decays nor recovers -- it freezes exactly where it is. A
+    -- herd parked below the 0.75 breeding gate in that band never breeds again
+    -- and never heals, while the barn shows no decline at all.
+    local dzLo, dzHi = nil, nil
+    for _, p in ipairs(pts) do
+        if p.d == 0 then
+            if dzLo == nil then dzLo = p.f end
+            dzHi = p.f
+        elseif p.d > 0 and dzLo ~= nil then
+            break
+        end
+    end
+    local firstRise = nil
+    for _, p in ipairs(pts) do
+        if p.d > 0 then firstRise = p.f; break end
+    end
+    if dzLo ~= nil and firstRise ~= nil and dzHi < firstRise then
+        hout("")
+        hout("  *** DEAD ZONE: f = %.2f .. %.2f moves health by ZERO per hour.", dzLo, dzHi)
+        hout("  *** It neither decays nor recovers -- it FREEZES where it is, and")
+        hout("  *** recovery only begins at f = %.2f. A herd stranded below the 0.75", firstRise)
+        hout("  *** breeding gate in this band never breeds and never heals, while")
+        hout("  *** the barn shows no decline to warn anyone.")
+    end
+
+    -- MODEL FIT. Two figures for one quantity must agree (5.27 / 5.28), so the
+    -- measurement is checked against the subType's own constants rather than
+    -- printed beside them and left to the reader.
+    local inc, dec, dthr, sname = AnimalFoodProbe.healthConsts(cl.subTypeIndex)
+    if inc ~= nil then
+        hout("")
+        hout("  MODEL FIT vs the declared constants (inc=%s dec=%s thr=%s)",
+             tostring(inc), tostring(dec), tostring(dthr))
+        local miss, worst, worstAt = 0, 0, nil
+        for _, p in ipairs(pts) do
+            if not p.clamped then
+                local rate
+                if p.f >= dthr then rate = inc * (p.f - dthr) / (1 - dthr)
+                else                rate = -dec * (1 - p.f / dthr) end
+                local pred = math.floor(START_H + rate) - START_H
+                local e = math.abs(pred - p.d)
+                if e > 0 then
+                    miss = miss + 1
+                    if e > worst then worst = e; worstAt = p.f end
+                end
+            end
+        end
+        if miss == 0 then
+            hout("  CONFIRMED: floor(health + rate) reproduces all %d sample(s) exactly,", #pts)
+            hout("  where rate = inc*(f-thr)/(1-thr) above the threshold and")
+            hout("  -dec*(1-f/thr) below it. The flooring is what creates the dead zone.")
+        else
+            hout("  MISMATCH on %d of %d sample(s), worst %d at f=%.2f.",
+                 miss, #pts, worst, worstAt or -1)
+            hout("  This subtype does NOT follow the shared model -- something other")
+            hout("  than the food factor is moving its health (horses carry dirt and")
+            hout("  riding terms). Its feed advice cannot be derived from food alone.")
+        end
+    end
+
+    return thr, verdict
+end
+
+-- ---------------------------------------------------------------------------
+-- SWEEP B -- where it actually ends up, over a full day.
+--
+-- Sweep A gives the first step; this gives the resting point, which is the thing
+-- the adviser needs. The factors are chosen AROUND the measured threshold rather
+-- than fixed, so the two rows either side of it are always present whatever
+-- species this is pointed at.
+function AnimalFoodProbe.sweepHealthSettle(cl, thr, head)
+    local HOURS = 24
+    hout("")
+    hout("SWEEP B -- WHERE HEALTH SETTLES   (%d hours on one clone, from 50)", HOURS)
+
+    local FS = {}
+    if thr ~= nil then
+        for _, f in ipairs({ thr - 0.10, thr - 0.05, thr, thr + 0.05, thr + 0.20, 1.00 }) do
+            if f >= 0 and f <= 1 then FS[#FS + 1] = f end
+        end
+    else
+        FS = { 0.00, 0.20, 0.40, 0.60, 0.80, 1.00 }
+    end
+
+    hout("  %8s %8s %8s %8s %8s  %s", "food f", "h+1", "h+4", "h+12", "h+24", "reading")
+    for _, f in ipairs(FS) do
+        local path = healthTrajectory(cl, 50, f, HOURS, head)
+        if path == nil then
+            hout("  %8.2f  -- trajectory unavailable", f)
+        else
+            local function at(i) return path[i + 1] or path[#path] end
+            local final = path[#path]
+            local reading
+            if final >= 99.99 then
+                reading = "-> 100 (sustains full health)"
+            elseif final <= 0.01 then
+                reading = "-> 0 (collapses)"
+            elseif math.abs(final - at(12)) < 0.01 then
+                reading = string.format("settles at %.1f", final)
+            else
+                reading = string.format("still moving at %.1f", final)
+            end
+            hout("  %8.2f %8.1f %8.1f %8.1f %8.1f  %s", f, at(1), at(4), at(12), at(24), reading)
+        end
+    end
+    hout("  A row that reaches 100 or 0 and stops is the FLAT model. A row that")
+    hout("  stops somewhere in between is a genuine equilibrium and the adviser")
+    hout("  has to model it.")
+end
+
+-- ---------------------------------------------------------------------------
+-- SWEEP C -- does the step depend on CURRENT health?
+--
+-- The remaining way health could settle without the step varying by food factor:
+-- an asymptotic approach, where the step shrinks as health nears its target. That
+-- would read as FLAT in sweep A (which holds health at 50 throughout) and still
+-- produce intermediate resting points, so sweep A alone cannot rule it out.
+function AnimalFoodProbe.sweepHealthStart(cl, thr, head)
+    hout("")
+    hout("SWEEP C -- STEP SIZE vs CURRENT HEALTH   (one hour each)")
+
+    local above = (thr ~= nil) and math.min(1.0, thr + 0.20) or 1.00
+    local below = (thr ~= nil) and math.max(0.0, thr - 0.10) or 0.00
+    local varies = false
+
+    for _, pair in ipairs({ { above, "ABOVE threshold" }, { below, "BELOW threshold" } }) do
+        local f, label = pair[1], pair[2]
+        hout("  f = %.2f  (%s)", f, label)
+        hout("    %8s %10s %9s", "health", "after 1h", "delta")
+        local seen = {}
+        for _, h in ipairs({ 20, 40, 60, 80 }) do
+            local after = healthStep(cl, h, f, head)
+            if after ~= nil then
+                local d = after - h
+                local bound = (after <= 0 or after >= 100) and "  (clamped)" or ""
+                hout("    %8d %10.2f %+9.2f%s", h, after, d, bound)
+                if bound == "" then seen[#seen + 1] = d end
+            end
+        end
+        if #seen >= 2 then
+            local lo, hi = seen[1], seen[1]
+            for _, v in ipairs(seen) do
+                if v < lo then lo = v end
+                if v > hi then hi = v end
+            end
+            if (hi - lo) < 0.01 then
+                hout("    constant across health -- no asymptote on this side.")
+            else
+                hout("    VARIES with health (%.2f .. %.2f) -- the approach is", lo, hi)
+                hout("    asymptotic, so health settles even if sweep A read FLAT.")
+                if label == "ABOVE threshold" then varies = true end
+            end
+        end
+    end
+
+    -- THE DESTINATION, which is what the adviser actually needs and which sweep A
+    -- cannot answer. A step that varies with the FOOD FACTOR only changes how
+    -- FAST health moves; it takes a step that varies with CURRENT HEALTH to make
+    -- it stop anywhere short of a bound.
+    hout("")
+    if varies then
+        hout("  DESTINATION: health SETTLES part way. Each mix sustains its own")
+        hout("  level, so the adviser has to trade health against feed cost and")
+        hout("  sweep B's settle column is the model it must carry.")
+    else
+        hout("  DESTINATION: health SATURATES. The step is independent of current")
+        hout("  health, so above the threshold it climbs at a constant rate until")
+        hout("  it reaches 100 and stops -- it never rests in between. A richer mix")
+        hout("  buys SPEED, not a higher resting health, so health is free above the")
+        hout("  threshold given time and the real trade is time-to-recover vs cost.")
+    end
+end
+
+-- ---------------------------------------------------------------------------
+function AnimalFoodProbe.runHealthProbe(fragment)
+    hout("================= arHealthProbe =================")
+
+    local rlOn, rlG, rlM = realisticLivestockActive()
+    if rlOn or #rlM > 0 then
+        hout("  *** RealisticLivestock IS ACTIVE (%s). It replaces the cluster class",
+             joinList(rlM, 4))
+        hout("  *** outright, so every figure below is RL's model, not the base game's.")
+    else
+        hout("  RealisticLivestock not detected: this is the BASE GAME.")
+    end
+
+    local barns = findAnimalBarns(fragment)
+    if #barns == 0 then
+        hout("  no husbandry matched. Nothing was touched.")
+        return
+    end
+
+    local barn, name = barns[1].placeable, barns[1].name
+    hout("  barn: %s  (farm=%s, %d animals)", name, tostring(barns[1].farm), barns[1].count)
+
+    local clusters = nil
+    if barn.getClusters ~= nil then
+        local okC, c = pcall(barn.getClusters, barn)
+        if okC then clusters = c end
+    end
+    if type(clusters) ~= "table" or countPairs(clusters) == 0 then
+        hout("  it has no clusters. Pass a fragment naming a barn that holds animals.")
+        return
+    end
+
+    local cl = nil
+    for _, c in pairs(clusters) do cl = c; break end
+
+    hout("")
+    hout("SAFETY GATE  (nothing below runs unless clone() is proven independent)")
+    local safe = AnimalFoodProbe.cloneIsSafe(cl)
+    if not safe then
+        hout("")
+        hout("  ABORTED. No sweep was run and NO LIVE CLUSTER WAS TOUCHED.")
+        hout("=================================================")
+        return
+    end
+
+    local baseline = scalarFields(cl)
+    local head = cl.numAnimals
+
+    -- THE METHOD IS CHECKED BEFORE ANY SWEEP, and its absence is reported as an
+    -- absence. Methods sit behind the protected metatable so they cannot be
+    -- enumerated (10.5), but they ARE reachable by name -- so a nil here means
+    -- the name is wrong, not that the object is opaque.
+    hout("")
+    if cl.updateHealth == nil then
+        hout("  updateHealth is NOT present on this cluster.")
+        hout("  Every sweep below needs it, so there is nothing to measure. The name")
+        hout("  comes from PlaceableHusbandryAnimals.lua:598 (cluster:updateHealth")
+        hout("  (foodFactor)); if that no longer holds, find the current name before")
+        hout("  guessing at a replacement.")
+        hout("=================================================")
+        return
+    end
+    hout("  updateHealth is present. Calling it as cluster:updateHealth(foodFactor),")
+    hout("  which is the form PlaceableHusbandryAnimals.lua:598 uses.")
+
+    hout("")
+    AnimalFoodProbe.dumpSubTypeConfig(cl.subTypeIndex)
+    hout("  (the three health fields above are what 11.9 sampled; the sweeps below")
+    hout("   measure the SHAPE those constants are used in, which it did not.)")
+
+    local thr, verdict = AnimalFoodProbe.sweepHealthRate(cl, head)
+    if verdict ~= "UNCALLABLE" and verdict ~= "NO MOVEMENT" then
+        AnimalFoodProbe.sweepHealthSettle(cl, thr, head)
+        AnimalFoodProbe.sweepHealthStart(cl, thr, head)
+    end
+
+    -- The gate tested ONE clone before the sweeps. This tests that ~60 clones and
+    -- several hundred writes later the live cluster is still exactly as it was: a
+    -- leak that only shows under repetition would pass the gate and still cost the
+    -- player their herd.
+    hout("")
+    hout("FINAL CHECK  (the live cluster, after every sweep)")
+    local now = scalarFields(cl)
+    local moved = diffFields(baseline, now)
+    if #moved == 0 then
+        hout("    numAnimals=%s health=%s age=%s -- IDENTICAL to the pre-sweep read.",
+             tostring(now.numAnimals), tostring(now.health), tostring(now.age))
+        hout("  Nothing was bought, sold, bred, fed or aged. The save is untouched.")
+    else
+        hout("  *** THE LIVE CLUSTER MOVED. This is a bug in THIS PROBE, not the game:")
+        for _, m in ipairs(moved) do hout("        %s", m) end
+    end
+    hout("=================================================")
+end
+
+function AnimalFoodProbe:consoleCommandHealth(fragment)
+    local ok, err = pcall(AnimalFoodProbe.runHealthProbe, fragment)
+    if not ok then return "arHealthProbe failed: " .. tostring(err) end
+    return "arHealthProbe done -- see log.txt"
+end
 -- ============================================================================
 -- arSellProbe -- CAN A MOD SELL ANIMALS WITHOUT REIMPLEMENTING THE TRANSACTION?
 --

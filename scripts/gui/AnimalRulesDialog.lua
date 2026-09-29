@@ -46,7 +46,7 @@ local HELP_KEY = {
 }
 
 local function l10n(key, fallback)
-    if AnimalRedux ~= nil and AnimalRedux.l10n ~= nil then return AnimalRedux.l10n(key, fallback) end
+    if HusbandryRedux ~= nil and HusbandryRedux.l10n ~= nil then return HusbandryRedux.l10n(key, fallback) end
     return fallback
 end
 
@@ -201,11 +201,11 @@ end
 
 function AnimalRulesDialog.register()
     if AnimalRulesDialog._instance ~= nil then return true end
-    if g_gui == nil or AnimalRedux == nil then return false end
+    if g_gui == nil or HusbandryRedux == nil then return false end
     -- AR's own profiles must already be in g_gui; this dialog names none of them
     -- today, but the page that opens it loads them before its own layout (29.7d).
     local d = AnimalRulesDialog.new()
-    g_gui:loadGui(AnimalRedux.MOD_DIR .. "gui/AnimalRulesDialog.xml", "AnimalRulesDialog", d)
+    g_gui:loadGui(HusbandryRedux.MOD_DIR .. "gui/AnimalRulesDialog.xml", "AnimalRulesDialog", d)
     AnimalRulesDialog._instance = d
     return true
 end

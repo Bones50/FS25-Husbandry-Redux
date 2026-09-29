@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
-<!-- Animal Redux: the AUTO TRADER, three modes in one window.
+<!-- Husbandry Redux: the AUTO TRADER, three modes in one window.
 
      BUY ORDERS   a standing order: a count, a cadence, an end
      SELL ORDERS  the same shape on the way out, plus which animals to take
@@ -114,8 +114,9 @@
 
             <!-- THE LOWER LIST: what is already standing on this barn. Hidden in
                  SELL RULES, which has no orders: a policy is one thing, not a list.
-                 12+250=262 | 270+90=360 | 368+80=448 | 456+304=760. RULES takes the
-                 room, because it is the only cell carrying several facts -->
+                 12+250=262 | 270+90=360 | 368+80=448 | 456+304=760. The last column
+                 is NEXT (buy) or NEXT SALE (sell): when the order runs next, or why
+                 its last run did nothing -->
             <Bitmap profile="ARList" position="40px -516px" size="760px 34px" id="hdrB">
                 <Text profile="ARHeaderLeft" position="12px 0px"  size="250px 34px" textSize="11px" id="hB1" />
                 <Text profile="ARHeaderLeft" position="270px 0px" size="90px 34px" textSize="11px" id="hB2" />

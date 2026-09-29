@@ -1,12 +1,12 @@
 -- ============================================================================
--- AnimalHelp.lua  (Animal Redux)
+-- AnimalHelp.lua  (Husbandry Redux)
 --
--- Animal Redux's user guide, shown as a TAB on Distribution Redux's User Guide
+-- Husbandry Redux's user guide, shown as a TAB on Distribution Redux's User Guide
 -- page through DR's registerHelpTab (API v9).
 --
 -- EXACTLY THE SHAPE AnimalSettings TAKES, deliberately: AR supplies content and
 -- DR owns the page. The tab is registered from HERE, so a player who removes
--- Animal Redux sees DR's guide exactly as it was, with one tab -- no check
+-- Husbandry Redux sees DR's guide exactly as it was, with one tab -- no check
 -- anywhere, the tab simply is never registered.
 --
 -- THE TEXT IS A PLACEHOLDER AND SAYS SO. The author is writing the real guide;
@@ -41,17 +41,17 @@
 
 AnimalHelp = {}
 
-AnimalHelp.MOD_NAME = "FS25_Animal_Redux"
+AnimalHelp.MOD_NAME = "FS25_Husbandry_Redux"
 
 local function l10n(key, fallback)
-    if AnimalRedux ~= nil and AnimalRedux.l10n ~= nil then return AnimalRedux.l10n(key, fallback) end
+    if HusbandryRedux ~= nil and HusbandryRedux.l10n ~= nil then return HusbandryRedux.l10n(key, fallback) end
     return fallback
 end
 
 local function warn(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.warn ~= nil then return AnimalRedux.warn(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then return HusbandryRedux.warn(fmt, ...) end
     local ok, msg = pcall(string.format, fmt, ...)
-    print("[AnimalRedux] " .. (ok and msg or tostring(fmt)))
+    print("[HusbandryRedux] " .. (ok and msg or tostring(fmt)))
 end
 
 -- ---------------------------------------------------------------------------
@@ -73,16 +73,16 @@ end
 local GUIDE = {
     {
         slug  = "intro",
-        title = "Animal Redux",
+        title = "Husbandry Redux",
         paras = {
-            "Animal Redux extends Distribution Redux with animal husbandry: what a barn is actually fed, what its herd is worth, and what it earns.",
+            "Husbandry Redux extends Distribution Redux with animal husbandry: what a barn is actually fed, what its herd is worth, and what it earns.",
             "## This guide is still being written",
-            "The pages are in place and the mod works; the written guide is not finished yet. Until it is, the screens themselves carry the explanation - every column header has a tooltip, and the Animal Redux tab in Settings describes what each option does.",
+            "The pages are in place and the mod works; the written guide is not finished yet. Until it is, the screens themselves carry the explanation - every column header has a tooltip, and the Husbandry Redux tab in Settings describes what each option does.",
             "## Where things are",
             "The Animals tab in this menu holds three views: ANIMALS lists every group on the farm, BARN examines one building, and BREEDS shows what each breed is kept for and what the engine makes of that.",
             "The barn strip on Distribution Redux's Animal Husbandry tab shows the same herd at a glance - health, productivity, feed by group, herd value and an estimated monthly profit.",
             "## Settings",
-            "Animal Redux's options live on their own tab of the Settings page. Each one turns a whole feature off rather than tuning it, so anything you switch off simply stops appearing.",
+            "Husbandry Redux's options live on their own tab of the Settings page. Each one turns a whole feature off rather than tuning it, so anything you switch off simply stops appearing.",
         },
     },
 }
@@ -141,7 +141,7 @@ function AnimalHelp.install(SD)
     end
     -- THE FUNCTION, not AnimalHelp.topics() -- DR calls it per page open.
     local ok, res = pcall(SD.API.registerHelpTab, AnimalHelp.MOD_NAME,
-                          l10n("ar_help_tab", "ANIMAL REDUX"), AnimalHelp.topics)
+                          l10n("ar_help_tab", "HUSBANDRY REDUX"), AnimalHelp.topics)
     if ok and res then
         warn("user guide tab added to the Distribution Redux guide page")
         return true

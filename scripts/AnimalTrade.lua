@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalTrade.lua  (Animal Redux)
+-- AnimalTrade.lua  (Husbandry Redux)
 --
 -- QUOTING AND COMMITTING one animal purchase or sale, through the base game's own
 -- dealer controller. No money handling, no cluster surgery, no event of our own --
@@ -46,8 +46,8 @@ AnimalTrade = {}
 AnimalTrade.MODE_SELL, AnimalTrade.MODE_BUY = 1, 2
 
 local function log(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.warn ~= nil then
-        AnimalRedux.warn("[trade] " .. fmt, ...)
+    if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then
+        HusbandryRedux.warn("[trade] " .. fmt, ...)
     end
 end
 
@@ -489,7 +489,7 @@ function AnimalTrade.buyRows(husbandry)
         if not AnimalTrade._toldEmpty[key] then
             AnimalTrade._toldEmpty[key] = true
             print(string.format(
-                "[AnimalRedux buy] no catalogue: getSourceItems -> %s, keys=%d, "
+                "[HusbandryRedux buy] no catalogue: getSourceItems -> %s, keys=%d, "
                 .. "numeric-table keys=%d, priced rows=0; build attempt: %s",
                 type(src), sawKeys, sawTables, tostring(account or "not attempted")))
         end

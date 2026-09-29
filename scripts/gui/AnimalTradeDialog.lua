@@ -1,5 +1,5 @@
 -- ============================================================================
--- AnimalTradeDialog.lua  (Animal Redux)
+-- AnimalTradeDialog.lua  (Husbandry Redux)
 --
 -- BUY AND SELL, in one window, opened from either Herd Inspector view.
 --
@@ -43,7 +43,7 @@ local AnimalTradeDialog_mt = Class(AnimalTradeDialog, MessageDialog)
 AnimalTradeDialog.MAX_LISTED = 400
 
 local function l10n(key, fallback)
-    if AnimalRedux ~= nil and AnimalRedux.l10n ~= nil then return AnimalRedux.l10n(key, fallback) end
+    if HusbandryRedux ~= nil and HusbandryRedux.l10n ~= nil then return HusbandryRedux.l10n(key, fallback) end
     return fallback
 end
 
@@ -182,9 +182,10 @@ function AnimalTradeDialog:rebuild()
     -- name or an index: two groups of the same animal at different ages are a
     -- routine thing on any barn, and a name match would land on whichever came
     -- first (the identity rule 5.37 and DR 6.29 both rest on).
+    local matched = false
     if self.mode == AnimalTrade.MODE_SELL and self.preferCluster ~= nil then
         for i, r in ipairs(self.rows) do
-            if r.cluster == self.preferCluster then self.rowIndex = i; break end
+            if r.cluster == self.preferCluster then self.rowIndex = i; matched = true; break end
         end
     end
     if self.rowIndex > #self.rows then self.rowIndex = 1 end
@@ -199,6 +200,18 @@ function AnimalTradeDialog:rebuild()
         self.tradeList:reloadData()
         if #self.rows > 0 then
             pcall(self.tradeList.setSelectedItem, self.tradeList, 1, self.rowIndex, true)
+            -- AND SCROLLED INTO VIEW when it is the group the player came from
+            -- (2026-09-13, the Pigs tab's per-row Sell). Selecting a row does not
+            -- promise it is on screen, and a list of about eleven rows can hold a
+            -- barn's twelfth group below the fold. smoothScrollTo is the list's own
+            -- and clamps the offset to the content (SmoothListElement.lua:1185).
+            local l = self.tradeList
+            local sec = matched and type(l.sections) == "table" and l.sections[1] or nil
+            local off = type(sec) == "table" and type(sec.itemOffsets) == "table"
+                        and sec.itemOffsets[self.rowIndex] or nil
+            if type(off) == "number" and l.smoothScrollTo ~= nil then
+                pcall(l.smoothScrollTo, l, off)
+            end
         end
         self._refreshing = false
     end
@@ -239,8 +252,8 @@ function AnimalTradeDialog:refresh()
     -- block on the tab the player just left.
     if AnimalTabs ~= nil then AnimalTabs.render(self, AnimalTradeDialog.modeLabels(), self.mode) end
 
-    setText(self.dialogTitleElement, buy and l10n("ar_td_title_buy", "Animal Redux - Buy Animals")
-                                         or l10n("ar_td_title_sell", "Animal Redux - Sell Animals"))
+    setText(self.dialogTitleElement, buy and l10n("ar_td_title_buy", "Husbandry Redux - Buy Animals")
+                                         or l10n("ar_td_title_sell", "Husbandry Redux - Sell Animals"))
     -- FREE SLOTS BELONGS BESIDE THE BARN NAME, not in a column. It is a property of
     -- the BUILDING and was identical on every row of the buy table, which is a column
     -- carrying no information -- it only told the reader something once, at the cost
@@ -551,9 +564,12 @@ end
 -- ---------------------------------------------------------------------------
 function AnimalTradeDialog.register()
     if AnimalTradeDialog._instance ~= nil then return true end
-    if g_gui == nil or AnimalRedux == nil then return false end
+    if g_gui == nil or HusbandryRedux == nil then return false end
     local d = AnimalTradeDialog.new()
-    g_gui:loadGui(AnimalRedux.MOD_DIR .. "gui/AnimalTradeDialog.xml", "AnimalTradeDialog", d)
+    g_gui:loadGui(HusbandryRedux.MOD_DIR .. "gui/AnimalTradeDialog.xml", "AnimalTradeDialog", d)
     AnimalTradeDialog._instance = d
     return true
 end
+
+-- FULL TEXT ON HOVER for any cell the layout cut short (TextTip.lua, 2026-09-29).
+if TextTip ~= nil and TextTip.install ~= nil then TextTip.install(AnimalTradeDialog) end

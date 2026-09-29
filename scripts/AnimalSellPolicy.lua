@@ -29,8 +29,7 @@
 -- and the harness asserts that BIJECTION in both directions, so a switch cannot
 -- be offered that the engine ignores nor a key hidden that it honours.
 --
--- NOTHING SELLS BY ITSELF YET. `AUTO_LIVE` is false: the executor has never sold
--- an animal unattended, so "Sell now" is the only thing that moves one. One flag.
+-- Sell orders now run on their schedule (AnimalSellSchedule.runDue, 2026-09-14).
 -- ============================================================================
 
 AnimalSellPolicy = {}
@@ -51,18 +50,11 @@ AnimalSellPolicy.FIELDS = {
     { key = "sellCalves",      kind = "bool",  l10n = "ar_pol_sellCalves" },
 }
 
----THE ONE GATE. While this is false nothing sells on a timer, whatever an order
--- says. Flip it once "Sell now" is confirmed in game.
-AnimalSellPolicy.AUTO_LIVE = false
-
-function AnimalSellPolicy.isAutoLive()
-    return AnimalSellPolicy.AUTO_LIVE == true
-end
 
 local function warn(fmt, ...)
-    if AnimalRedux ~= nil and AnimalRedux.warn ~= nil then return AnimalRedux.warn(fmt, ...) end
+    if HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then return HusbandryRedux.warn(fmt, ...) end
     local ok, msg = pcall(string.format, fmt, ...)
-    print("[AnimalRedux] " .. (ok and msg or tostring(fmt)))
+    print("[HusbandryRedux] " .. (ok and msg or tostring(fmt)))
 end
 
 function AnimalSellPolicy.fieldOf(key)

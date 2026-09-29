@@ -1,8 +1,8 @@
 -- ============================================================================
--- AnimalHerdData.lua  (Animal Redux) -- the barn reader
+-- AnimalHerdData.lua  (Husbandry Redux) -- the barn reader
 --
 -- MOVED OUT OF THE ORIGINAL PAGE, not copied, when a second tab wanted the same
--- picture of a barn -- its food factor, its groups, its herd. Animal Redux had
+-- picture of a barn -- its food factor, its groups, its herd. Husbandry Redux had
 -- already been bitten once by keeping two copies of a display helper (DR 5.69,
 -- which promoted setStorageBar out of a GUI file for exactly this reason, after
 -- the duplicated version caused three regressions).
@@ -35,7 +35,7 @@ function AnimalHerdData.herdHealthFactor(clusters)
 end
 
 local function l10n(key, fallback)
-    if AnimalRedux ~= nil and AnimalRedux.l10n ~= nil then return AnimalRedux.l10n(key, fallback) end
+    if HusbandryRedux ~= nil and HusbandryRedux.l10n ~= nil then return HusbandryRedux.l10n(key, fallback) end
     return fallback
 end
 
@@ -76,7 +76,12 @@ function AnimalHerdData.readBarn(p)
         end
     end
     local trough, held = AnimalFeedModel.availableOf(p, everyFt)
-    local delivered = select(2, AnimalFeedModel.troughOf(p))   -- trough alone, for the summary
+    -- THE TROUGH MAP, not just its total. `trough` above is AVAILABILITY (pool + meadow,
+    -- via getAvailableFood) despite its name; the two have to be kept apart now that the
+    -- PRODUCED table separates what the barn grew from what the farm delivered. The
+    -- grazed share of a product is availability MINUS trough, which is the same
+    -- arithmetic feedCostPerHour already does to avoid charging for pasture.
+    local troughMap, delivered = AnimalFeedModel.troughOf(p)
     local engine, modelF = nil, nil
     if model ~= nil and hasAnimals then
         engine = select(1, AnimalFeedModel.measureFactor(p, ati, trough, demand))
@@ -175,7 +180,7 @@ function AnimalHerdData.readBarn(p)
         end
     end
 
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     local uid = (SD ~= nil and SD.assetUid ~= nil) and SD.assetUid(p) or tostring(p)
 
     -- A MEADOW IS A FOOD SOURCE THE TROUGH DOES NOT SHOW. PlaceableHusbandryMeadow
@@ -185,10 +190,25 @@ function AnimalHerdData.readBarn(p)
     -- score 0.40: the herd is eating the pasture, and 0.40 is the Grass tier.
     -- Reported rather than hidden -- the numbers are right, they just are not the
     -- whole story, and a contradiction on screen is worse than a caveat.
-    local grazes = p.spec_husbandryMeadow ~= nil
+    -- A MEADOW IS NOT NECESSARILY GRAZEABLE: a cosmetic paddock declares one with no
+    -- <fruitType>, leaving spec.fruitTypeInfos empty. Measured across the base game plus
+    -- every installed mod: 37 cosmetic against 70 grazeable (DR 5.75 / 5.85).
+    local grazes = AnimalFeedModel.grazeableOf(p)
+
+    -- FEEDING ROBOT. A robot barn keeps its ingredients in per-fill-type bunkers and
+    -- only ever puts the MIXED product in the trough, so without these three the barn
+    -- reads as holding nothing but TMR and the whole ration is costed against a product
+    -- the farm never bought.
+    local robotBunkers = AnimalFeedModel.robotBunkersOf(p)
+    local hasRobot = next(robotBunkers) ~= nil
+    local mixedFt = hasRobot and AnimalFeedModel.mixedFillTypeOf(p) or nil
+    local ingredientRates = hasRobot and AnimalFeedModel.robotIngredientRates(p, demand) or {}
 
     return { placeable = p, uid = uid, name = name, model = model, demand = demand,
-             trough = trough,  -- ft -> litres, so a pane can go per PRODUCT
+             trough = trough,  -- ft -> litres AVAILABLE (pool + meadow), so a pane can go per PRODUCT
+             troughMap = troughMap,          -- ft -> litres DELIVERED (the pool alone)
+             hasRobot = hasRobot, robotBunkers = robotBunkers,
+             mixedFt = mixedFt, ingredientRates = ingredientRates,
              -- SERIAL means ONE tier feeds the whole herd (a cow's TMR / Silage /
              -- Hay / Grass are alternatives); PARALLEL means every group
              -- contributes. Which it is decides what is actually being EATEN.
@@ -275,7 +295,7 @@ function AnimalHerdData.sortByName(list, nameOf, idOf)
     nameOf = nameOf or function(e) return e.name end
     idOf   = idOf   or function(e) return e.uid end
 
-    local env = AnimalRedux ~= nil and AnimalRedux.DR_ENV or nil
+    local env = HusbandryRedux ~= nil and HusbandryRedux.DR_ENV or nil
     local DS  = (type(env) == "table") and env.DistributionSort or nil
     if DS ~= nil and DS.less ~= nil then
         local ok = pcall(table.sort, list, function(a, b)
@@ -315,7 +335,7 @@ function AnimalHerdData.enumerate()
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return barns end
 
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
 
     -- IF/ELSE, NOT `a and b or c`, on both of these. DR's _farmCanUse legitimately
     -- returns FALSE for a building this farm does not own, and the collapsing form
@@ -395,7 +415,7 @@ end
 -- DECLARE the base game's blank placeholder tile and rendered as solid white squares.
 function AnimalHerdData.iconFromStore(st)
     if type(st) ~= "table" then return nil end
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     local usable = (SD ~= nil and SD.iconFileUsable) or function(f) return f ~= nil end
     for _, key in ipairs({ "imageFilename", "imageFilenameSmall", "iconFilename" }) do
         local f = st[key]
@@ -422,7 +442,7 @@ end
 -- -> product icon and verifies each with textureFileExists. Reusing it means this
 -- list and DR's own building lists can never disagree about a barn's picture.
 function AnimalHerdData.barnIconFile(p)
-    local SD = AnimalRedux ~= nil and AnimalRedux.DR or nil
+    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
     if SD == nil or SD.assetIconFile == nil or p == nil then return nil end
     local ok, f = pcall(SD.assetIconFile, p)
     if ok and type(f) == "string" and f ~= "" then return f end

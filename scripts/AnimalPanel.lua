@@ -1,4 +1,4 @@
--- Animal Redux -- the husbandry summary panel, drawn on this mod's OWN page.
+-- Husbandry Redux -- the husbandry summary panel, drawn on this mod's OWN page.
 --
 -- PORTED FROM DISTRIBUTION REDUX 2026-09-07, for the standalone plan. DR wrote this renderer
 -- (DR 5.81 / 5.84 / 5.85a) and still owns the copy that draws the panel on ITS Animal Husbandry
@@ -132,6 +132,39 @@ function AnimalPanel._panelTrackW(root, bgName)
     return w
 end
 
+---WHOLE UNITS. PORTED FROM DR, AND ITS ABSENCE IS WHY THE PROFIT BLOCK WAS BLANK.
+--
+-- Reported 2026-09-09: the profit headline drew NOTHING on every cow barn, while the
+-- chicken pen drew "-" -- and once the pen had drawn its dash, the cow barns showed
+-- that dash too. That sequence is the whole diagnosis. A barn with a real profit takes
+-- the branch that calls signed() -> formatMoneyFine -> fmtMoney; a pen whose profit
+-- cannot be computed takes the `else` branch, which writes "-" directly and calls
+-- neither. So the failing path was the one that formats a NUMBER.
+--
+-- When AnimalPanel took over rendering this strip on 2026-09-07 (so the page would
+-- draw with DR uninstalled), formatMoneyFine came across and `fmtMoney` did not -- it
+-- is a file-LOCAL in SmartDistribution.lua, not a field, so there was nothing to
+-- qualify and nothing to notice. The name then resolved to a nil GLOBAL and threw on
+-- every call. Profit is the last block drawn, and the page wraps the whole draw in a
+-- pcall, so blocks A to C survived and D silently never ran: no error, no log line,
+-- an empty space.
+--
+-- `luac -p` CANNOT SEE THIS. Calling an undeclared global is valid syntax; it throws
+-- only when reached. DR records the same trap three times (5.44, 5.57, 5.59) and this
+-- is its port-shaped variant: copy a function, leave its dependency behind.
+--
+-- EXPOSED AS A FIELD TOO, exactly as DR does it. formatMoneyFine's own caller reads
+-- `AnimalPanel.formatMoneyFine or AnimalPanel.formatMoney`, and that fallback was
+-- equally undefined -- so the intended safety net was not there either.
+local function fmtMoney(v)
+    if g_i18n ~= nil and g_i18n.formatMoney ~= nil then
+        local ok, t = pcall(function() return g_i18n:formatMoney(v, 0, true, false) end)
+        if ok and type(t) == "string" then return t end
+    end
+    return string.format("%s%d", v < 0 and "-" or "", math.floor(math.abs(v) + 0.5))
+end
+AnimalPanel.formatMoney = fmtMoney
+
 ---A SMALL FIGURE IS NOT A ZERO. fmtMoney rounds to whole units, which is right for
 -- the sums this mod usually prints and wrong for a rate: manure and slurry are
 -- 0.033/L, so a pen making 2 L an hour earns 0.066 -- and at 0 decimal places that
@@ -171,7 +204,7 @@ function AnimalPanel.drawHusbandryPanel(root, d, opts)
     if root.setVisible ~= nil then root:setVisible(true) end
     AnimalPanel._panelReset(root)
 
-    local L = AnimalRedux.l10n
+    local L = HusbandryRedux.l10n
     local COL = AnimalPanel.PANEL_COLOURS
     local function pct(v) return string.format("%d%%", math.floor((v or 0) * 100 + 0.5)) end
 
@@ -386,7 +419,12 @@ function AnimalPanel.drawHusbandryPanel(root, d, opts)
     -- PAST PEAK is a state, not a series, so it gets a status colour and a WORD rather than being
     -- encoded in the bar: only cows decline with age, and a falling bar with no explanation reads
     -- as something the player did wrong rather than as "sell these now".
-    if val.pastPeak then
+    -- THE HERD VALUE ADVICE takes this line when the provider sends one (2026-09-14):
+    -- profit in green, a loss in red with the fix. It supersedes the past-peak note,
+    -- which is one of the fixes it can name.
+    if type(val.advice) == "table" and val.advice.text ~= nil then
+        advice("apValueNote", val.advice)
+    elseif val.pastPeak then
         AnimalPanel._panelText(root, "apValueNote", L("dr_panel_pastPeak", "past peak - value falls with age"),
                   1.00, 0.62, 0.10)
     else
@@ -414,8 +452,11 @@ function AnimalPanel.drawHusbandryPanel(root, d, opts)
     -- "EST. FORECAST" IS PART OF THE LABEL, not a footnote. Every term in this block is
     -- today's rate at today's price projected forward; none of it is a measurement of
     -- anything that has happened, and a money figure with no such qualifier reads as one.
-    AnimalPanel._panelText(root, "apProfitLabel",
-              o.profitLabel or L("dr_panel_profit", "EST. FORECAST - PROFIT / MO"))
+    -- THE LABEL IS EMITTED FURTHER DOWN, once `signed` exists: it now carries the
+    -- PROSPECTIVE figure, and formatting that needs the helper. Calling it up here
+    -- would resolve to a nil upvalue -- valid syntax, so luac -p passes, and it throws
+    -- only when reached (the 5.44 / 5.57 trap, and the one that blanked this very
+    -- block for two days).
     -- FINE formatting here, not fmtMoney: at a one-hour period a term can be a few
     -- cents, and a whole-unit round would print it as "+0" beside three figures
     -- that are not zero either
@@ -434,6 +475,25 @@ function AnimalPanel.drawHusbandryPanel(root, d, opts)
     local function part(name, key, fallback, v)
         AnimalPanel._panelText(root, name, L(key, fallback) .. " " .. signed(v))
     end
+    -- THE SECOND FIGURE RIDES IN THE LABEL, and that is a space decision rather than a
+    -- preference: block C is full to both edges (the value bar above it, the four
+    -- breakdown cells below), so a fifth element would have to take height from blocks
+    -- A or B -- and this markup is duplicated in DR's copy, so every new child is a
+    -- two-mod change that tools/husbandrypanel.lua then has to hold in step. The label
+    -- has the room and costs neither.
+    --
+    -- SHOWN ONLY WHEN THE TWO DIFFER, which is exactly when it is worth reading: they
+    -- differ only while the pen is destroying births, and the suffix vanishes the
+    -- moment the player makes room. So its ABSENCE is the "nothing is being wasted"
+    -- signal, and a healthy barn keeps a clean label.
+    local baseLabel = o.profitLabel or L("dr_panel_profit", "EST. PROFIT / MO")
+    if pr.complete and pr.perMonth ~= nil and pr.perMonthProspective ~= nil
+       and math.abs(pr.perMonthProspective - pr.perMonth) >= 0.5 then
+        baseLabel = baseLabel .. "  " .. L("dr_panel_pfCleared", "if cleared:")
+                    .. " " .. signed(pr.perMonthProspective)
+    end
+    AnimalPanel._panelText(root, "apProfitLabel", baseLabel)
+
     if pr.complete and pr.perMonth ~= nil then
         local v = pr.perMonth * scale
         if v >= 0 then
@@ -474,12 +534,12 @@ function AnimalPanel.formatVolume(v)
     local sign = (v < 0 and n > 0) and "-" or ""
     local s, unit
     if n < 1000 then
-        s, unit = tostring(n), AnimalRedux.l10n("ar_unit_litre", " L")
+        s, unit = tostring(n), HusbandryRedux.l10n("ar_unit_litre", " L")
     else
         s = string.format("%.3f", n / 1000)
         s = s:gsub("0+$", "")                                     -- drop extraneous zeros: 600.000 -> 600.
         s = s:gsub("%.$", "")                                     -- ...and the bare point it can leave
-        unit = AnimalRedux.l10n("ar_unit_kilolitre", " kL")
+        unit = HusbandryRedux.l10n("ar_unit_kilolitre", " kL")
     end
     -- thousands separators on the integer part (1,234.567 kL); the decimals must not be grouped
     local int, freq = s:match("^(%d+)"), nil

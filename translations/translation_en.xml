@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!-- ===========================================================================
-     Animal Redux, ENGLISH. This is the reference file: every other language is
+     Husbandry Redux, ENGLISH. This is the reference file: every other language is
      a copy of it with the text attributes translated.
 
      ADDING A LANGUAGE
@@ -47,10 +47,10 @@
      =========================================================================== -->
 <l10n>
     <texts>
-        <text name="input_ANIMALREDUX_OPEN_MANAGER" text="Open Animal Redux menu"/>
-        <text name="ar_input_openMenu"      text="Animal Redux menu"/>
-        <text name="ar_title_settings"      text="ANIMAL REDUX - SETTINGS"/>
-        <text name="ar_title_help"          text="ANIMAL REDUX - USER GUIDE"/>
+        <text name="input_ANIMALREDUX_OPEN_MANAGER" text="Open Husbandry Redux menu"/>
+        <text name="ar_input_openMenu"      text="Husbandry Redux menu"/>
+        <text name="ar_title_settings"      text="HUSBANDRY REDUX - SETTINGS"/>
+        <text name="ar_title_help"          text="HUSBANDRY REDUX - USER GUIDE"/>
         <!-- Self test. Resolved once at load so a broken translation chain is
              reported in log.txt immediately, rather than surfacing later as
              mysteriously untranslated UI. The value is matched in code, so
@@ -82,9 +82,12 @@
              repro 120 / litres 100 / each 100 / total 134 px at 11px text, so
              about 16 characters per 100px. Keep them short. -->
         <text name="ar_hi_panelTitle"       text="ANIMALS, FEED AND HERD VALUE"/>
-        <text name="ar_hi_page_title"         text="ANIMAL REDUX - HERD INSPECTOR"/>
-        <text name="ar_hi_page_title_barn"    text="ANIMAL REDUX - BARN INSPECTOR"/>
+        <text name="ar_hi_page_title"         text="HUSBANDRY REDUX - HERD INSPECTOR"/>
         <text name="ar_hi_tab_title"          text="Herd Inspector"/>
+        <text name="ar_hi_page_title_overview" text="Overview"/>
+        <text name="ar_act_more"               text="(+%d more)"/>
+        <text name="ar_act_purpose"            text="Better kept as %s"/>
+        <text name="ar_hi_col_action"          text="NEXT ACTION"/>
         <text name="ar_hi_view_groups"        text="Animals"/>
         <!-- THE BREEDS VIEW: what this barn keeps each breed FOR. The tab label
              shares a 146px slot with the other two, so keep it to about 12
@@ -95,15 +98,66 @@
         <text name="ar_hi_col_keptFor"        text="KEPT FOR"/>
         <!-- the ENGINE's opinion, kept in its own column so it can be told apart
              from the player's answer beside it. -->
-        <text name="ar_hi_col_advice"         text="ADVICE"/>
         <!-- the verdict AND why, in about 48 characters. noOutput reads quite
              differently from calvesWorthMore though both say Breeders. -->
+        <text name="ar_hi_order_every"       text="Sell %d every %d mo, from %d mo"/>
+        <text name="ar_hi_order_once"        text="Sell %d in %d mo"/>
+        <text name="ar_hi_order_now"         text="Sell %d now"/>
         <text name="ar_hi_adviceWhy"          text="%s - %s"/>
         <text name="ar_hi_why_outputBeats"    text="output beats its calves"/>
         <text name="ar_hi_why_calvesWorth"    text="calves worth more than its output"/>
         <text name="ar_hi_why_noOutput"       text="makes nothing sellable"/>
         <text name="ar_hi_why_nothingToWeigh" text="nothing to weigh either way"/>
-        <text name="ar_hi_page_title_breeds"  text="ANIMAL REDUX - BREEDS"/>
+        <text name="ar_hi_page_title_breeds"  text="HUSBANDRY REDUX - BREEDS"/>
+        <text name="ar_hi_page_title_pigs"    text="HUSBANDRY REDUX - PIGS"/>
+        <text name="ar_hi_view_pigs"          text="Pigs"/>
+        <text name="ar_hi_view_cows"          text="Cows"/>
+        <text name="ar_hi_page_title_cows"    text="HUSBANDRY REDUX - COWS"/>
+        <text name="ar_hi_view_sheep"           text="Sheep"/>
+        <text name="ar_hi_view_horses"          text="Horses"/>
+        <text name="ar_hi_view_chickens"        text="Chickens"/>
+        <text name="ar_hi_view_other"           text="Other"/>
+        <text name="ar_hi_page_title_sheep"     text="HUSBANDRY REDUX - SHEEP"/>
+        <text name="ar_hi_page_title_horses"    text="HUSBANDRY REDUX - HORSES"/>
+        <text name="ar_hi_page_title_chickens"  text="HUSBANDRY REDUX - CHICKENS"/>
+        <text name="ar_hi_page_title_other"     text="HUSBANDRY REDUX - OTHER ANIMALS"/>
+        <text name="ar_hi_col_trade"          text="Trade"/>
+        <text name="ar_hi_group_ration"       text="Complete ration"/>
+        <text name="ar_hi_btn_trader"         text="Trader"/>
+        <text name="ar_hi_pig_keep"           text="Keep animals"/>
+        <text name="ar_hi_prod_sellNow"       text="Sell now - they cost more than they earn"/>
+        <text name="ar_hi_prod_sellAt"        text="Sell at %s (in %s)"/>
+        <text name="ar_hi_pig_sell"           text="Sell %s, every %s, starting in %s"/>
+        <text name="ar_hi_pig_sellNow"        text="Sell %s, every %s, starting now"/>
+        <text name="ar_hi_unit_animal"        text="%d animal"/>
+        <text name="ar_hi_unit_animals"       text="%d animals"/>
+        <text name="ar_hi_unit_month"         text="%d month"/>
+        <text name="ar_hi_unit_months"        text="%d months"/>
+        <text name="ar_adv_birth_loseNext"    text="%d births lost in %d mo - no room"/>
+        <text name="ar_adv_birth_sufficient"  text="Sufficient room for new births"/>
+        <text name="ar_adv_feed_optimal"      text="Food 100% - health and productivity at their best"/>
+        <text name="ar_adv_feed_listAnd"      text="%s and %s"/>
+        <text name="ar_adv_feed_falling"      text="Health is falling - add %s now"/>
+        <text name="ar_adv_feed_frozen"       text="Health is frozen - add %s"/>
+        <text name="ar_adv_feed_recover"      text="Add %s to restore health and productivity"/>
+        <text name="ar_adv_feed_full"         text="Add %s for full productivity"/>
+        <text name="ar_adv_value_gain"        text="Running at a profit"/>
+        <text name="ar_adv_value_loss"        text="Loss - feed costs more than the herd earns"/>
+        <text name="ar_adv_value_loss_health" text="Loss - feed a full ration to restore health"/>
+        <text name="ar_adv_value_loss_births" text="Loss - sell animals to make room for births"/>
+        <text name="ar_adv_value_loss_switch" text="Loss - switch to %s feed to reduce input cost"/>
+        <text name="ar_adv_birth_saleIn"      text="Selling %d in %d mo"/>
+        <text name="ar_adv_birth_saleNow"     text="Selling %d now"/>
+        <text name="ar_alert_health"          text="%s: animal health has dropped to %d%%"/>
+        <text name="ar_alert_loss"            text="%s: now running at a loss"/>
+        <text name="ar_adv_feed_recovering"   text="Full ration - health recovering to 100%"/>
+        <text name="ar_adv_feed_maintainCheaper" text="Health 100%% - feed %s to hold it for less cost"/>
+        <text name="ar_adv_feed_maintainAdd"  text="Feed %s to hold health at 100%%"/>
+        <text name="ar_adv_feed_maintainOk"   text="Health 100%% - %s holds it at the lowest cost"/>
+        <text name="ar_adv_value_loss_ration" text="Loss - complete the ration to raise output"/>
+        <text name="ar_adv_value_loss_productivity" text="Loss - improve productivity to sell more output"/>
+        <text name="ar_adv_value_loss_pastPeak" text="Loss - sell animals past peak value"/>
+        <text name="ar_bs_breedUnmatched"     text="Could not tell which dealer animals are this breed, so all are shown."/>
         <!-- WHAT THIS NUMBER IS, exactly: the animal's own monthly output valued at
              TODAY'S sale price (economyManager:getPricePerLiter), per animal, before
              bedding cost and before ANY production chain it might feed. Manure sold
@@ -134,15 +188,12 @@
         <!-- THE BREEDS TAB's own footer. It replaces the trading pair rather than
              adding to it: MENU_EXTRA_1 and EXTRA_2 are the only spare footer
              actions the game has, so a page can show two at a time and no more. -->
-        <text name="ar_hi_btn_sellRules"      text="Sell Rules"/>
-        <text name="ar_hi_btn_buyRules"       text="Buy Rules"/>
-        <text name="ar_hi_buyRulesTodo"       text="Buy rules are not built yet. Buying has no engine choosing for it, so its rules are guards rather than policy - and the one worth having, a cash floor, belongs to the farm rather than to one breed."/>
 
         <!-- ===================== THE SELL RULES WINDOW =======================
              One barn-breed's rules. The labels sit in a 640px column at 13px, so
              about 70 characters; the help sentences have a 1296px line over two
              rows and can be a sentence. -->
-        <text name="ar_rul_title"             text="Animal Redux - Sell Rules"/>
+        <text name="ar_rul_title"             text="Husbandry Redux - Sell Rules"/>
         <text name="ar_rul_subtitle"          text="%s  -  %s"/>
         <text name="ar_rul_btnReset"          text="Reset to defaults"/>
         <text name="ar_rul_btnClose"          text="Close"/>
@@ -175,7 +226,6 @@
         <text name="ar_rul_help_keepFreeSlots"   text="Keep this many pen slots empty for newborns. Free slots are shared by every breed in the barn, so this one setting is the whole barn's."/>
         <text name="ar_hi_purpose_producer"   text="Producers"/>
         <text name="ar_hi_purpose_breeder"    text="Breeders"/>
-        <text name="ar_hi_view_barn"          text="Barns"/>
         <text name="ar_hi_filter_all"         text="All animals"/>
         <!-- THE PERIOD SELECTOR IS THE PAGE'S ONLY UNIT LEGEND, so these three
              strings carry a job the column headers used to do. Keep them short:
@@ -201,7 +251,8 @@
         <text name="ar_hi_col_foodGroup"      text="FOOD GROUP"/>
         <text name="ar_hi_col_held"           text="HELD"/>
         <text name="ar_hi_col_needs"          text="NEEDS"/>
-        <text name="ar_hi_col_costPerH"       text="COST"/>
+        <text name="ar_hi_col_used"           text="USED"/>
+        <text name="ar_hi_col_costPerH"       text="COST IF ALL"/>
         <text name="ar_hi_col_costNow"        text="COST NOW"/>
         <text name="ar_hi_group_bedding"      text="Bedding"/>
         <text name="ar_hi_group_water"        text="Water"/>
@@ -210,9 +261,9 @@
              so keep them under about 30 characters; the empty-state sentences have
              a 760px line and can be a sentence. -->
         <text name="ar_hi_btn_trade"          text="Buy / Sell"/>
-        <text name="ar_td_title"              text="Animal Redux - Buy / Sell"/>
-        <text name="ar_td_title_buy"          text="Animal Redux - Buy Animals"/>
-        <text name="ar_td_title_sell"         text="Animal Redux - Sell Animals"/>
+        <text name="ar_td_title"              text="Husbandry Redux - Buy / Sell"/>
+        <text name="ar_td_title_buy"          text="Husbandry Redux - Buy Animals"/>
+        <text name="ar_td_title_sell"         text="Husbandry Redux - Sell Animals"/>
         <text name="ar_td_mode_sell"          text="SELL ANIMALS"/>
         <text name="ar_td_mode_buy"           text="BUY ANIMALS"/>
         <text name="ar_td_noBarn"             text="no barn"/>
@@ -249,33 +300,33 @@
         <text name="ar_td_bought"             text="Bought %d."/>
         <text name="ar_td_failed"             text="Refused: %s"/>
         <text name="ar_hi_auto"               text="auto"/>
-        <text name="ar_hi_col_product"        text="PRODUCT"/>
+        <text name="ar_hi_col_productIn"      text="PRODUCT INPUTS"/>
+        <text name="ar_hi_col_productOut"     text="PRODUCT OUTPUTS"/>
+        <text name="ar_hi_col_produced"       text="PRODUCED"/>
+        <text name="ar_hi_col_source"         text="SOURCE"/>
+        <text name="ar_hi_col_madeRate"       text="RATE"/>
+        <text name="ar_hi_group_mix"          text="Mix ingredient"/>
+        <text name="ar_hi_group_mixed"        text="Mixed feed"/>
+        <text name="ar_hi_group_grazed"       text="Meadow"/>
         <text name="ar_hi_col_prodRate"       text="PROD RATE"/>
-        <text name="ar_hi_col_rec"            text="RECOMMENDATION"/>
         <!-- THE RECOMMENDATION SENTENCES. The column is 204px at 12px, so keep each
              under about 34 characters: this cell TRUNCATES, it does not wrap, and a
              clipped verdict is worse than a shorter one (5.55). %s is money, %d a
              count or a number of months. -->
-        <text name="ar_hi_rec_calf"           text="Sell newborns - nursery pays more"/>
-        <text name="ar_hi_rec_headroom"       text="Sell %d - pen full, births lost"/>
-        <text name="ar_hi_rec_peak"           text="Sell - past peak, losing %s / mo"/>
-        <text name="ar_hi_rec_plan"           text="Sell %d - see the Animals tab"/>
-        <text name="ar_hi_rec_unwell"         text="Feed - too unwell to breed (%d%%)"/>
-        <text name="ar_hi_rec_young"          text="Keep - producing in %d mo"/>
-        <text name="ar_hi_rec_growing"        text="Keep - still growing"/>
-        <text name="ar_hi_rec_appreciating"   text="Keep - gaining %s / mo"/>
-        <text name="ar_hi_rec_outearns"       text="Keep - earns %s / mo over decline"/>
-        <text name="ar_hi_rec_declining"      text="Sell - old, losing %s / mo"/>
-        <text name="ar_hi_rec_steady"         text="Keep - steady earner, %s / mo"/>
-        <text name="ar_hi_rec_unprofitable"   text="Sell - costs more than it earns"/>
-        <text name="ar_hi_rec_unknown"        text="-"/>
 
         <!-- THE TWO PANEL ADVICE LINES. Budgets differ and both TRUNCATE rather than
              wrap once they overrun: the feed line is 480px at 11px (about 80
              characters, one line) and the births line is 108px over two (about 36
              in total). %s is a group and its products, %d a count. -->
-        <text name="ar_adv_feed_ok"           text="Food factor 100% - no action needed"/>
-        <text name="ar_adv_feed_provide"      text="Provide %s to raise productivity"/>
+        <text name="ar_adv_feed_best"        text="Best ration already - no action needed"/>
+        <text name="ar_adv_feed_best_named" text="Best ration already: %s"/>
+        <text name="ar_adv_feed_switch"      text="Switch to %s"/>
+        <text name="ar_adv_feed_switch_gain" text="Switch to %s: %s / mo"/>
+        <text name="ar_adv_feed_deadzone"    text="Food too thin - health FROZEN. Feed %s"/>
+        <text name="ar_adv_feed_decay"       text="Health is FALLING - feed %s now"/>
+        <text name="ar_adv_feed_nofloor"     text="No ration here can restore health - check the trough"/>
+        <text name="ar_adv_feed_noprofit"    text="Feed costs more than the output at every tier (%s / mo)"/>
+        <text name="ar_adv_feed_subsidy"     text="Outputs do not cover feed - cheapest is %s"/>
         <text name="ar_adv_feed_grazing"      text="Grazing - the meadow is feeding them"/>
         <text name="ar_adv_birth_sell"        text="Sell %d to free slots for births"/>
         <text name="ar_adv_birth_lost"        text="%d births lost - pen is full"/>
@@ -311,6 +362,7 @@
         <text name="ar_bs_colEvery"     text="EVERY"/>
         <text name="ar_bs_colProgress"  text="DONE"/>
         <text name="ar_bs_colNext"      text="NEXT"/>
+        <text name="ar_bs_colNextSale"  text="NEXT SALE"/>
         <text name="ar_bs_hdrOrder"     text="THE ORDER"/>
         <!-- ONE LABEL PER TRANSACTION. Naming the transaction means naming which
              one, so these split the way the "Buy every" / "Sell every" pair does. -->
@@ -401,7 +453,7 @@
         <text name="ar_bs_addedSell"    text="Added: sell %d, %s. Set its rules on the SELL RULES tab."/>
         <text name="ar_bs_removedSell"  text="Removed: sell %d"/>
         <text name="ar_bs_planNothing"  text="These rules would sell nothing on this barn right now."/>
-        <text name="ar_bs_notLive"      text="Automatic selling is not switched on yet - use Sell now to run the rules once."/>
+        <text name="ar_bs_sellRunsAt"   text="Sells within the hour once due - set it for the month before births so they have room."/>
 
         <!-- the policy switches, one per AnimalSellRules.DEFAULTS key the panel
              exposes. The bijection is asserted by tools/animalsell.lua. -->
@@ -464,7 +516,7 @@
         <text name="ar_note_unsellable" text="Nothing here can be sold at the moment."/>
         <text name="ar_note_nursery"    text="This barn would earn more run as a nursery - switch on Sell newborns."/>
 
-        <!-- SETTINGS, shown as an ANIMAL REDUX tab on Distribution Redux's own
+        <!-- SETTINGS, shown as an HUSBANDRY REDUX tab on Distribution Redux's own
              Settings page. Titles sit in a fixed width column and the tooltip is
              the only place with room to explain, so the title stays short and the
              tooltip carries the consequence.
@@ -473,9 +525,12 @@
         <!-- THE USER GUIDE TAB. The body is one long line per paragraph on purpose:
              the page word-wraps to its own column count, so a hand-wrapped paragraph
              renders ragged. "## " starts a sub-heading. -->
-        <text name="ar_help_tab"           text="ANIMAL REDUX"/>
+        <text name="ar_help_tab"           text="HUSBANDRY REDUX"/>
+        <text name="ar_overview_tab"       text="HUSBANDRY REDUX"/>
+        <text name="ar_legacy_warning" text="%s has been renamed to Husbandry Redux.&#10;&#10;The old mod (%s) is still installed and both are running, so everything will appear twice.&#10;&#10;Quit to the main menu, delete that mod from your mods folder, and load again. Your animal data is kept."/>
+        <text name="ar_overview_placeholder" text="Under Construction"/>
 
-        <text name="ar_set_tab"            text="ANIMAL REDUX"/>
+        <text name="ar_set_tab"            text="HUSBANDRY REDUX"/>
         <text name="ar_set_off"            text="Off"/>
         <text name="ar_set_on"             text="On"/>
 
@@ -486,13 +541,16 @@
         <text name="ar_set_autoTrader_tt"  text="Standing buy and sell orders that run on their own. Off removes the Auto Trader button and the Sell Rules and Buy Rules buttons, AND DELETES every order you have set up. You will be asked to confirm first."/>
 
         <text name="ar_set_herdAdviser"       text="Herd Adviser"/>
-        <text name="ar_set_herdAdviser_tt"    text="Animal Redux's suggestions: the two advice lines on the barn panel and the RECOMMENDATION column on the Animals tab. Off hides them. Every figure they were drawn from stays on screen."/>
+        <text name="ar_set_herdAdviser_tt"    text="Husbandry Redux's suggestions: the two advice lines on the barn panel and the RECOMMENDATION column on the Animals tab. Off hides them. Every figure they were drawn from stays on screen."/>
 
         <text name="ar_set_advancedFeeder"    text="Advanced animal feeder"/>
-        <text name="ar_set_advancedFeeder_tt" text="Animal Redux works out which feed each barn actually needs and asks Distribution Redux for that. Off hands feeding back to Distribution Redux's own supply rules."/>
+        <text name="ar_set_advancedFeeder_tt" text="Husbandry Redux works out which feed each barn actually needs and asks Distribution Redux for that, and each barn can be switched on or off on the Pigs tab. Off hands every barn back to Distribution Redux's own supply rules. Has no effect while Distribution Redux's husbandry feeding is switched off - then nothing is fed automatically."/>
+        <text name="ar_hi_feed_on"            text="Advanced feeding: On"/>
+        <text name="ar_hi_feed_off"           text="Advanced feeding: Off"/>
+        <text name="ar_hi_feed_drOff"         text="DR husbandry feeding is off - nothing is fed automatically"/>
 
         <text name="ar_set_debug"          text="Debug logging"/>
-        <text name="ar_set_debug_tt"       text="Extra Animal Redux lines in log.txt. Leave this off unless you are reporting a problem. Anything that actually goes wrong is logged either way."/>
+        <text name="ar_set_debug_tt"       text="Extra Husbandry Redux lines in log.txt. Leave this off unless you are reporting a problem. Anything that actually goes wrong is logged either way."/>
         <text name="ar_set_passProfiler"    text="Performance logging"/>
         <text name="ar_set_passProfiler_tt" text="Writes what Distribution Redux's hourly pass cost to log.txt, and how many world scans it made. Leave on Slow passes only - it is silent unless an hourly pass takes longer than 150ms. Switch to Every pass if you are asked for a performance report: it then logs two lines every in-game hour, which is what lets a healthy farm be compared against a slow one. This is the same setting as the one on Distribution Redux's own page, and either one being on enables it."/>
         <text name="ar_set_prof_off"        text="Off"/>
@@ -501,7 +559,7 @@
         <text name="ar_set_needsDR"         text="(needs Distribution Redux)"/>
         <text name="ar_unit_litre"          text=" L"/>
         <text name="ar_unit_kilolitre"      text=" kL"/>
-        <text name="ar_set_needsDR_tt"      text="This setting needs Distribution Redux, which is not installed (or is an older version without the feature). Animal Redux works without it - only this option is unavailable. Your choice has been kept and will apply again as soon as Distribution Redux is present."/>
+        <text name="ar_set_needsDR_tt"      text="This setting needs Distribution Redux, which is not installed (or is an older version without the feature). Husbandry Redux works without it - only this option is unavailable. Your choice has been kept and will apply again as soon as Distribution Redux is present."/>
 
         <!-- The confirmation raised when the Auto Trader is switched off. It NAMES
              the counts, because "this will delete things" is not a question a
