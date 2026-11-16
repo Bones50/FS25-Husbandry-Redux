@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!-- ===========================================================================
+     Animal Redux, ENGLISH. This is the reference file: every other language is
+     a copy of it with the text attributes translated.
+
+     ADDING A LANGUAGE
+       Copy this file to translation_<code>.xml (translation_de.xml,
+       translation_fr.xml, ...) and translate ONLY the text attributes. Leave
+       every name attribute exactly as it is: those are keys, not words.
+       PARTIAL TRANSLATIONS ARE WELCOME AND SAFE. Any key you leave out falls
+       back to the English shipped in the code, so a half-finished file never
+       breaks the mod and never shows a raw key on screen.
+
+     TWO RULES THAT WILL BITE YOU
+       1. An XML comment may not contain a double hyphen ANYWHERE. It is a parse
+          error and the whole file silently fails to load, taking every string
+          with it. Note the asymmetry: a double hyphen inside a text attribute
+          is perfectly legal, so the file may well contain them.
+       2. Overrun text is CLIPPED, not wrapped. Table columns and the footer
+          button bar are fixed width, so a translation longer than its budget
+          is silently cut off mid-word. German runs roughly 30 percent longer
+          than English. Character budgets are noted per block below.
+
+     KEY NAMING, so a key can be found from what it does
+       ar_ui_*      page titles, tab names, section headings
+       ar_col_*     table column headers      (TIGHT: budget noted per column)
+       ar_btn_*     buttons                   (TIGHT: the footer bar is shared)
+       ar_set_*     settings. Convention, NOT a parallel list:
+                      ar_set_<id>        the row title
+                      ar_set_<id>_tt     its tooltip
+                      ar_set_<id>_v<N>   value label N, counting from 1
+                    Resolving by convention rather than an array means the
+                    labels cannot drift out of step with the values, which
+                    matters because the SAVE FILE AND THE NETWORK CARRY THE
+                    INDEX, never the label. A mislabel is a player choosing one
+                    thing while the screen says another.
+       ar_msg_*     in game messages and notifications
+       ar_status_*  status words shown in a cell
+       ar_food_*    feed and ration vocabulary
+       ar_rule_*    auto sell rule vocabulary
+
+     WHAT IS DELIBERATELY NOT HERE
+       Log output. A player pasting log.txt into a bug report needs it in
+       English, and so do we. Internal enum values and anything compared against
+       a literal are likewise never translated: they are keys wearing the
+       costume of words.
+     =========================================================================== -->
+<l10n>
+    <texts>
+        <!-- Self test. Resolved once at load so a broken translation chain is
+             reported in log.txt immediately, rather than surfacing later as
+             mysteriously untranslated UI. The value is matched in code, so
+             LEAVE IT AS "ok" IN EVERY LANGUAGE. -->
+        <text name="ar_l10n_selftest" text="ok"/>
+
+        <!-- The Animals tab. Column headers are TIGHT: the widths are hand tiled
+             and overrun is clipped, not wrapped. Budgets in characters at 11px:
+             barn 30, factor 12, group 26, the numeric columns 12 each,
+             accepts 44. -->
+
+
+
+        <!-- VIEW SELECTOR. Three states in one 300px control: keep them SHORT,
+             budget about 18 characters each including the "View: " prefix. -->
+
+        <!-- ANIMALS view. A row is a CLUSTER, a group of animals sharing an age,
+             a health and a price, NOT one animal. Column budgets at 11px:
+             animal 38, count 13, age 13, health 15, value each 18,
+             value total 21, next birth 23, status 23. -->
+
+
+        <!-- TRADE view. Scaffolding: these are the facts the sell rules will be
+             built from. Budgets at 12px: factor 50, value 30, meaning 87. -->
+
+        <!-- ================= HERD INSPECTOR (the second Animals tab) =========
+             hi_col_* are fixed-width table headers and are CLIPPED, not wrapped.
+             Budgets: animal 130 / barn 220 / count 60 / age 60 / health 70 /
+             repro 120 / litres 100 / each 100 / total 134 px at 11px text, so
+             about 16 characters per 100px. Keep them short. -->
+        <text name="ar_hi_panelTitle"       text="ZWIERZĘTA, PASZA I WARTOŚĆ STADA"/>
+        <text name="ar_hi_page_title"         text="ANIMAL REDUX - INSPEKTOR STADA"/>
+        <text name="ar_hi_page_title_barn"    text="ANIMAL REDUX - INSPEKTOR OBORY"/>
+        <text name="ar_hi_tab_title"          text="Inspektor stada"/>
+        <text name="ar_hi_view_groups"        text="Zwierzęta"/>
+        <!-- THE BREEDS VIEW: what this barn keeps each breed FOR. The tab label
+             shares a 146px slot with the other two, so keep it to about 12
+             characters. Column budgets at 11px: breed 300, animals 80,
+             kept for 190, advice 160, earns 120, where from 325. -->
+        <text name="ar_hi_view_breeds"        text="Rasy"/>
+        <text name="ar_hi_col_breed"          text="RASA"/>
+        <text name="ar_hi_col_keptFor"        text="TRZYMANE DLA"/>
+        <!-- the ENGINE's opinion, kept in its own column so it can be told apart
+             from the player's answer beside it. -->
+        <text name="ar_hi_col_advice"         text="PORADA"/>
+        <!-- the verdict AND why, in about 48 characters. noOutput reads quite
+             differently from calvesWorthMore though both say Breeders. -->
+        <text name="ar_hi_adviceWhy"          text="%s - %s"/>
+        <text name="ar_hi_why_outputBeats"    text="produkcja bije cielęta"/>
+        <text name="ar_hi_why_calvesWorth"    text="cielęta warte więcej niż produkcja"/>
+        <text name="ar_hi_why_noOutput"       text="nie daje nic na sprzedaż"/>
+        <text name="ar_hi_why_nothingToWeigh" text="nie ma czego porównać"/>
+        <text name="ar_hi_page_title_breeds"  text="ANIMAL REDUX - RASY"/>
+        <!-- WHAT THIS NUMBER IS, exactly: the animal's own monthly output valued at
+             TODAY'S sale price (economyManager:getPricePerLiter), per animal, before
+             bedding cost and before ANY production chain it might feed. Manure sold
+             is worth a fraction of manure digested, and the model cannot see the
+             difference (28.8), so the header says RAW rather than implying a profit. -->
+        <!-- THE THREE MONEY COLUMNS ARE NAMED BY THE DECISION THEY DECIDE, and two
+             of them borrow the ADVICE column's own two words on purpose: the advice
+             reads "Producers" or "Breeders", and the larger of these two figures IS
+             that verdict. Naming them any other way left the reader to work out
+             which number the sentence was talking about (author, 2026-09-02).
+
+             OUTPUT VALUE is GROSS , what the animal's produce fetches at today's
+             price, before bedding and before the value it sheds as it ages, and
+             before any production chain it feeds. It is the override anchor, not a
+             term in the comparison.
+
+             The two NET columns are the pair the engine actually weighs. NO PERIOD
+             IN ANY OF THESE HEADINGS: all three follow the selector above the table,
+             so a "/ mo" here would be a lie on every other setting.
+             Budgets at 11px: 100px / 110px / 110px. -->
+        <text name="ar_hi_col_output"         text="WARTOŚĆ PROD."/>
+        <text name="ar_hi_col_asProducer"     text="NETTO JAKO PROD."/>
+        <text name="ar_hi_col_asBreeder"      text="NETTO JAKO HODOW."/>
+        <text name="ar_hi_col_whereFrom"      text="SKĄD"/>
+        <!-- a product the barn MAKES but nothing can put a price on. Distinct from
+             earning nothing, which is a measurement rather than an absence. -->
+        <text name="ar_hi_notPriced"          text="wytworzone, lecz bez ceny"/>
+        <!-- THE BREEDS TAB's own footer. It replaces the trading pair rather than
+             adding to it: MENU_EXTRA_1 and EXTRA_2 are the only spare footer
+             actions the game has, so a page can show two at a time and no more. -->
+        <text name="ar_hi_btn_sellRules"      text="Zasady sprzedaży"/>
+        <text name="ar_hi_btn_buyRules"       text="Zasady zakupu"/>
+        <text name="ar_hi_buyRulesTodo"       text="Zasady zakupu nie są jeszcze gotowe. Przy kupnie nic nie decyduje za gracza, więc jego zasady są raczej zabezpieczeniami niż polityką - a jedyna warta uwagi, próg gotówki, należy do gospodarstwa, nie do jednej rasy."/>
+
+        <!-- ===================== THE SELL RULES WINDOW =======================
+             One barn-breed's rules. The labels sit in a 640px column at 13px, so
+             about 70 characters; the help sentences have a 1296px line over two
+             rows and can be a sentence. -->
+        <text name="ar_rul_title"             text="Animal Redux - Zasady sprzedaży"/>
+        <text name="ar_rul_subtitle"          text="%s  -  %s"/>
+        <text name="ar_rul_btnReset"          text="Przywróć domyślne"/>
+        <text name="ar_rul_btnClose"          text="Zamknij"/>
+        <text name="ar_rul_hint"              text="Dotknij zasady, aby zobaczyć, co robi. Zmiany są zapisywane na bieżąco."/>
+        <text name="ar_rul_reset"             text="Powrót do domyślnych zasad dla tej rasy."/>
+        <text name="ar_rul_purposeProducer"   text="trzymane dla PRODUKCJI"/>
+        <text name="ar_rul_purposeBreeder"    text="trzymane dla HODOWLI"/>
+        <text name="ar_rul_purposeUnset"      text="nie ustawiono celu - to zasady domyślne"/>
+
+        <!-- THE QUESTIONS. Each herd is asked in its own vocabulary: a producing
+             herd keeps ADULTS and sells newborns, a breeding one keeps BREEDERS
+             and may be run as a nursery. They are the same two engine rules asked
+             the way each herd's owner would put it. -->
+        <text name="ar_rul_sellNewborns"      text="Sprzedawaj młode"/>
+        <text name="ar_rul_runAsNursery"      text="Prowadź jako odchowalnię"/>
+        <text name="ar_rul_sellAtPeak"        text="Sprzedaj po szczycie"/>
+        <text name="ar_rul_headroomWorthIt"   text="Zwalniaj miejsce, gdy się opłaca"/>
+        <text name="ar_rul_keepAdults"        text="Nigdy poniżej (dorosłe)"/>
+        <text name="ar_rul_keepBreeders"      text="Nigdy poniżej (hodowlane)"/>
+        <text name="ar_rul_minHealthToSell"   text="Nie sprzedawaj stada poniżej"/>
+        <text name="ar_rul_keepFreeSlots"     text="Trzymaj wolne miejsca (cała obora)"/>
+
+        <text name="ar_rul_help_sellNewborns"    text="Sprzedawaj każde młode zaraz po urodzeniu. W stadzie produkcyjnym poród zajmuje miejsce dla producenta, a cielę przez miesiące nic nie zarabia."/>
+        <text name="ar_rul_help_runAsNursery"    text="Prowadź tę rasę pod odchów i sprzedaż cieląt: młode są sprzedawane, A dorosłe stado trzymane na połowie miejsc, by każde cielę miało się gdzie urodzić."/>
+        <text name="ar_rul_help_sellAtPeak"      text="Sprzedaj zwierzę, gdy będzie już tylko tracić na wartości. Uruchamia się tylko wtedy, gdy spadek przewyższa to, co zwierzę jeszcze zarabia."/>
+        <text name="ar_rul_help_headroomWorthIt" text="Zwalniaj miejsce na porody tylko wtedy, gdy sprzedane zwierzę jest warte więcej niż utracona produkcja, zanim dorośnie jego następca."/>
+        <text name="ar_rul_help_keepAdults"      text="Nigdy nie schodź poniżej tylu dorosłych zwierząt tej rasy, by obora nadal produkowała."/>
+        <text name="ar_rul_help_keepBreeders"    text="Nigdy nie schodź poniżej tylu zwierząt hodowlanych tej rasy, by stado mogło się samo odtwarzać."/>
+        <text name="ar_rul_help_minHealthToSell" text="Nie sprzedawaj, dopóki średnie zdrowie stada jest poniżej tej wartości. Chore stado osiąga zaledwie 40% wartości księgowej, więc lepiej je najpierw nakarmić."/>
+        <text name="ar_rul_help_keepFreeSlots"   text="Trzymaj tyle wolnych miejsc dla młodych. Wolne miejsca dzielą wszystkie rasy w oborze, więc to ustawienie dotyczy całej obory."/>
+        <text name="ar_hi_purpose_producer"   text="Producenci"/>
+        <text name="ar_hi_purpose_breeder"    text="Hodowlane"/>
+        <text name="ar_hi_view_barn"          text="Obory"/>
+        <text name="ar_hi_filter_all"         text="Wszystkie zwierzęta"/>
+        <!-- THE PERIOD SELECTOR IS THE PAGE'S ONLY UNIT LEGEND, so these three
+             strings carry a job the column headers used to do. Keep them short:
+             the box is 300px and the arrows take some of it. -->
+        <text name="ar_hi_per_cycle"          text="NA: CYKL (1 GODZ)"/>
+        <text name="ar_hi_per_month"          text="NA: MIESIĄC"/>
+        <text name="ar_hi_per_year"           text="NA: ROK"/>
+        <!-- the panel headline, which follows the same selector. 130px at 11px,
+             so about 20 characters. -->
+        <text name="ar_hi_profit_cycle"       text="ZYSK / CYKL"/>
+        <text name="ar_hi_profit_month"       text="ZYSK / MIES"/>
+        <text name="ar_hi_profit_year"        text="ZYSK / ROK"/>
+        <text name="ar_hi_col_animal"         text="ZWIERZĘ"/>
+        <text name="ar_hi_col_barn"           text="OBORA"/>
+        <text name="ar_hi_col_count"          text="LICZBA"/>
+        <text name="ar_hi_col_age"            text="WIEK"/>
+        <text name="ar_hi_col_health"         text="ZDROWIE"/>
+        <text name="ar_hi_col_repro"          text="ROZRÓD"/>
+        <text name="ar_hi_col_each"           text="WARTOŚĆ / SZT"/>
+        <text name="ar_hi_col_total"          text="WARTOŚĆ RAZEM"/>
+        <text name="ar_hi_col_groupValue"     text="WARTOŚĆ GRUPY"/>
+        <text name="ar_hi_col_change"         text="WARTOŚĆ +/-"/>
+        <text name="ar_hi_col_foodGroup"      text="GRUPA PASZY"/>
+        <text name="ar_hi_col_held"           text="ZAPAS"/>
+        <text name="ar_hi_col_needs"          text="POTRZEBA"/>
+        <text name="ar_hi_col_costPerH"       text="KOSZT"/>
+        <text name="ar_hi_col_costNow"        text="KOSZT TERAZ"/>
+        <text name="ar_hi_group_bedding"      text="Ściółka"/>
+        <text name="ar_hi_group_water"        text="Woda"/>
+
+        <!-- THE BUY / SELL WINDOW. The money labels sit in a 190px column at 12px,
+             so keep them under about 30 characters; the empty-state sentences have
+             a 760px line and can be a sentence. -->
+        <text name="ar_hi_btn_trade"          text="Kup / Sprzedaj"/>
+        <text name="ar_td_title"              text="Animal Redux - Kup / Sprzedaj"/>
+        <text name="ar_td_title_buy"          text="Animal Redux - Kup zwierzęta"/>
+        <text name="ar_td_title_sell"         text="Animal Redux - Sprzedaj zwierzęta"/>
+        <text name="ar_td_mode_sell"          text="SPRZEDAJ ZWIERZĘTA"/>
+        <text name="ar_td_mode_buy"           text="KUP ZWIERZĘTA"/>
+        <text name="ar_td_noBarn"             text="brak obory"/>
+        <text name="ar_td_col_animal"         text="GRUPA"/>
+        <text name="ar_td_col_offered"        text="OFERTA"/>
+        <text name="ar_td_col_age"            text="WIEK"/>
+        <text name="ar_td_barnFree"           text="%s   -   %d wolnych miejsc"/>
+        <text name="ar_td_nameCount"          text="%s   x%d"/>
+        <text name="ar_td_col_each"           text="ZA SZT"/>
+        <text name="ar_td_col_eachNet"        text="NETTO / SZT"/>
+        <text name="ar_td_col_eachCost"       text="KOSZT / SZT"/>
+        <text name="ar_td_amount"             text="ILE"/>
+        <text name="ar_td_qtyAll"             text="%d  (wszystkie)"/>
+        <text name="ar_td_months"             text="%d mies"/>
+        <text name="ar_td_less"               text="-1"/>
+        <text name="ar_td_more"               text="+1"/>
+        <text name="ar_td_all"                text="Maks"/>
+        <text name="ar_td_commit"             text="Potwierdź"/>
+        <text name="ar_td_buyNow"             text="Kup"/>
+        <text name="ar_td_sellNow"            text="Sprzedaj"/>
+        <text name="ar_td_close"              text="Zamknij"/>
+        <text name="ar_td_lbl_value"          text="Wartość sprzedaży"/>
+        <text name="ar_td_lbl_price"          text="Cena"/>
+        <text name="ar_td_lbl_fee"            text="Prowizja handlarza"/>
+        <text name="ar_td_lbl_totalGain"      text="ŁĄCZNY ZYSK"/>
+        <text name="ar_td_lbl_totalCost"      text="KOSZT CAŁKOWITY"/>
+        <text name="ar_td_empty_client"       text="Handel działa tylko na serwerze."/>
+        <text name="ar_td_empty_noctrl"       text="Handlarz zwierząt nie jest dostępny w tej wersji."/>
+        <text name="ar_td_empty_buy"          text="Handlarz nie ma nic, co ta obora mogłaby przyjąć."/>
+        <text name="ar_td_empty_sell"         text="Ta obora nie ma zwierząt na sprzedaż."/>
+        <text name="ar_td_note_full"          text="Ta obora nie ma wolnych miejsc."/>
+        <text name="ar_td_note_none"          text="W tej grupie nie ma czego sprzedać."/>
+        <text name="ar_td_sold"               text="Sprzedano %d."/>
+        <text name="ar_td_bought"             text="Kupiono %d."/>
+        <text name="ar_td_failed"             text="Odrzucono: %s"/>
+        <text name="ar_hi_auto"               text="auto"/>
+        <text name="ar_hi_col_product"        text="PRODUKT"/>
+        <text name="ar_hi_col_prodRate"       text="TEMPO PROD."/>
+        <text name="ar_hi_col_rec"            text="ZALECENIE"/>
+        <!-- THE RECOMMENDATION SENTENCES. The column is 204px at 12px, so keep each
+             under about 34 characters: this cell TRUNCATES, it does not wrap, and a
+             clipped verdict is worse than a shorter one (5.55). %s is money, %d a
+             count or a number of months. -->
+        <text name="ar_hi_rec_calf"           text="Sprzedaj młode - odchów lepszy"/>
+        <text name="ar_hi_rec_headroom"       text="Sprzedaj %d - pełno, straty"/>
+        <text name="ar_hi_rec_peak"           text="Sprzedaj - po szczycie, %s / mies"/>
+        <text name="ar_hi_rec_plan"           text="Sprzedaj %d - patrz Zwierzęta"/>
+        <text name="ar_hi_rec_unwell"         text="Karm - zbyt chore do rozrodu (%d%%)"/>
+        <text name="ar_hi_rec_young"          text="Zostaw - produkcja za %d mies"/>
+        <text name="ar_hi_rec_growing"        text="Zostaw - jeszcze rośnie"/>
+        <text name="ar_hi_rec_appreciating"   text="Zostaw - zyskuje %s / mies"/>
+        <text name="ar_hi_rec_outearns"       text="Zostaw - %s / mies ponad spadek"/>
+        <text name="ar_hi_rec_declining"      text="Sprzedaj - stare, -%s / mies"/>
+        <text name="ar_hi_rec_steady"         text="Zostaw - stabilnie %s / mies"/>
+        <text name="ar_hi_rec_unprofitable"   text="Sprzedaj - koszt ponad zysk"/>
+        <text name="ar_hi_rec_unknown"        text="-"/>
+
+        <!-- THE TWO PANEL ADVICE LINES. Budgets differ and both TRUNCATE rather than
+             wrap once they overrun: the feed line is 480px at 11px (about 80
+             characters, one line) and the births line is 108px over two (about 36
+             in total). %s is a group and its products, %d a count. -->
+        <text name="ar_adv_feed_ok"           text="Faktor paszy 100% - nic do zrobienia"/>
+        <text name="ar_adv_feed_provide"      text="Dostarcz %s, by zwiększyć wydajność"/>
+        <text name="ar_adv_feed_grazing"      text="Wypas - łąka je żywi"/>
+        <text name="ar_adv_birth_sell"        text="Sprzedaj %d, by zwolnić miejsca"/>
+        <text name="ar_adv_birth_lost"        text="%d porodów straconych - pełno"/>
+        <text name="ar_adv_birth_room"        text="Nic nie trzeba - %d miejsc"/>
+        <text name="ar_adv_birth_none"        text="Nic nie trzeba - brak rozrodu"/>
+        <text name="ar_adv_birth_ok"          text="Nic nie trzeba"/>
+        <text name="ar_hi_col_sellValue"      text="WARTOŚĆ"/>
+        <text name="ar_hi_repro_young"        text="za młode"/>
+        <text name="ar_hi_repro_unwell"       text="poniżej progu 75%"/>
+        <text name="ar_hi_repro_due"          text="rozród - za %d mies"/>
+        <text name="ar_hi_repro_breeding"     text="rozród"/>
+        <text name="ar_hi_fmt_months"         text="%d mies"/>
+
+        <!-- the summary table over the Trade view's detail table. Every figure
+             is PER MONTH, including both halves of the book-value pair. -->
+
+
+        <!-- The recommendation the rules produce, read only. WHAT IT MEANS is the
+             widest column (about 87 characters at 12px) and carries the reason a
+             sale is advised, which is the whole point of the view. -->
+
+        <!-- THE BUY SCHEDULE window: a standing order per barn. The three
+             selectors read as the sentence the player is writing, so the labels
+             are words and not abbreviations. Column budgets at 12px: WHAT 290px
+             (about 48 chars), EVERY 120px, PROGRESS 130px, NEXT 224px. -->
+        <text name="ar_bs_title"        text="Auto-handlarz"/>
+        <text name="ar_bs_noBarn"       text="brak obory"/>
+        <text name="ar_bs_colAnimal"    text="ZWIERZĘ"/>
+        <text name="ar_bs_colAge"       text="WIEK"/>
+        <text name="ar_bs_colPrice"     text="ZA SZT"/>
+        <text name="ar_bs_colRow"       text="KATALOG"/>
+        <text name="ar_bs_colWhat"      text="ZLECENIE STAŁE"/>
+        <text name="ar_bs_colEvery"     text="CO"/>
+        <text name="ar_bs_colProgress"  text="WYKONANO"/>
+        <text name="ar_bs_colNext"      text="NASTĘPNE"/>
+        <text name="ar_bs_hdrOrder"     text="ZLECENIE"/>
+        <!-- ONE LABEL PER TRANSACTION. Naming the transaction means naming which
+             one, so these split the way the "Buy every" / "Sell every" pair does. -->
+        <text name="ar_bs_count"        text="Ile zwierząt na jeden zakup:"/>
+        <text name="ar_bs_countSell"    text="Ile zwierząt na jedną sprzedaż:"/>
+        <!-- THE TEXT PICKER's two grey prompts. The range one takes the cap as a
+             parameter and is filled in from the SELECTED BARN's capacity, not from
+             a constant, so a 96 animal cow barn says 96. -->
+        <text name="ar_bs_numPrompt"    text="Podaj liczbę..."/>
+        <text name="ar_bs_numRange"     text="Liczba poza zakresem (%d-%d)..."/>
+        <text name="ar_bs_every"        text="Miesięcy między zakupami:"/>
+        <text name="ar_bs_for"          text="Liczba zakupów"/>
+        <text name="ar_bs_forSell"      text="Liczba sprzedaży"/>
+        <text name="ar_bs_foreverBuy"   text="Kupuj bez końca:"/>
+        <text name="ar_bs_foreverSell"  text="Sprzedawaj bez końca:"/>
+        <!-- WHAT TYPING A RUN COUNT TAKES AWAY, given back as a derived figure in
+             the row the Purchases total used to occupy. -->
+        <text name="ar_bs_lblSpan"      text="Trwa"/>
+        <text name="ar_bs_month1"       text="1 miesiąc"/>
+        <text name="ar_bs_months"       text="%d miesięcy"/>
+        <text name="ar_bs_rowNo"        text="wiersz %d"/>
+        <text name="ar_bs_lblEach"      text="Każdorazowo"/>
+        <text name="ar_bs_lblTotal"     text="Łączne zobowiązanie"/>
+        <text name="ar_bs_progress"     text="%d / %d"/>
+        <text name="ar_bs_paused"       text="wstrzymane"/>
+        <text name="ar_bs_done"         text="gotowe"/>
+        <text name="ar_bs_due"          text="teraz"/>
+        <text name="ar_bs_waiting"      text="za %s"/>
+        <text name="ar_bs_btnAdd"       text="Dodaj zlecenie"/>
+        <text name="ar_bs_btnPause"     text="Wstrzymaj / wznów"/>
+        <text name="ar_bs_btnRemove"    text="Usuń"/>
+        <text name="ar_bs_btnClose"     text="Zamknij"/>
+        <text name="ar_bs_added"        text="Dodano: %d x %s, %s"/>
+        <text name="ar_bs_removed"      text="Usunięto: %d x %s"/>
+        <text name="ar_bs_refused"      text="Odrzucono: %s"/>
+        <text name="ar_bs_empty"        text="Handlarz nie oferuje nic dla tej obory."/>
+        <text name="ar_bs_runsAt"       text="Uruchamia się o %02d:00 lub podczas snu, który mija tę godzinę."/>
+        <text name="ar_bs_client"       text="Tylko host może ustawić automatyczne kupowanie."/>
+        <text name="ar_bs_standDown"    text="Automatyczne kupowanie jest wstrzymane, gdy działa Realistic Livestock."/>
+        <text name="ar_hi_btn_schedule" text="Auto-handlarz"/>
+
+        <!-- THE AUTO TRADER's sell half. Two instruments: a timed ORDER, which is
+             a row, and the RULES, which are a per-barn policy the engine already
+             runs. The reason and policy names come straight from
+             AnimalSellRules, so a code here is a code there. -->
+        <text name="ar_bs_modeBuy"      text="ZLECENIA KUPNA"/>
+        <text name="ar_bs_modeSell"     text="ZLECENIA SPRZEDAŻY"/>
+        <text name="ar_bs_modeRules"    text="ZASADY SPRZEDAŻY"/>
+        <text name="ar_bs_hdrRules"     text="ZASADY"/>
+        <!-- THE SELL ORDER LIST IS BY BREED (28.7). A breed is a stable identity a
+             player can aim an order at; a cluster is not, and its age and worth
+             each describe one slice of a breed rather than the breed. -->
+        <!-- WHERE A BREED'S EARNINGS COME FROM, per product. The model prices RAW
+             fill types and cannot see what a farm does downstream, so a figure that
+             is arithmetically right can still be wrong for this player: manure
+             sold is worth a fraction of manure digested. Naming the terms is what
+             lets them argue with it. The note line is 1096px over two lines. -->
+        <text name="ar_bs_breedTerms"    text="%s: %d szt., każde zarabia %s/mies -- %s. Młode warte %s."/>
+        <text name="ar_bs_breedNoEarn"   text="%s: %d szt. Brak wycenionej produkcji miesięcznej, więc miejsce daje tylko wartość zwierzęcia."/>
+        <text name="ar_bs_unpriced"      text="bez wyceny"/>
+        <text name="ar_bs_colBreed"      text="RASA"/>
+        <text name="ar_bs_colEarnsAs"    text="ZARABIA NAJWIĘCEJ JAKO"/>
+        <text name="ar_bs_colValueTotal" text="WARTOŚĆ ŁĄCZNA"/>
+        <text name="ar_bs_colHead"      text="ZWIERZĘTA"/>
+        <text name="ar_bs_colWhatSell"  text="STAŁA SPRZEDAŻ"/>
+        <text name="ar_bs_everySell"    text="Miesięcy między sprzedażami:"/>
+        <text name="ar_bs_lblExpected"  text="Łącznie oczekiwane"/>
+        <!-- THE PRODUCER VERSUS NURSERY VERDICT, which the engine has computed on
+             every plan since the nursery rule shipped and never showed. Diagnostic
+             first: it says what the model already concludes about a barn, so the
+             player can check it against what they actually keep that barn for.
+             The value cell is 118px at 13px, so the two WORDS get about 15
+             characters; the sentences sit on a 1096px note line and can breathe. -->
+        <text name="ar_bs_lblUse"        text="Zarabia najwięcej jako"/>
+        <text name="ar_bs_useAdult"      text="Producenci"/>
+        <text name="ar_bs_useNursery"    text="Odchowalnia"/>
+        <text name="ar_bs_slotAdult"     text="Ta obora zarabia najwięcej na PRODUCENTACH: %s/mies wobec %s/mies jako odchowalnia."/>
+        <text name="ar_bs_slotNursery"   text="Ta obora zarabia najwięcej jako ODCHOWALNIA: %s/mies wobec %s/mies na producentach."/>
+        <!-- NO VERDICT IS ITSELF A FINDING, so it names the term that was missing
+             rather than showing a dash. -->
+        <text name="ar_bs_slotNone"      text="Brak werdyktu producent / odchowalnia dla tej obory: %s"/>
+        <text name="ar_bs_slotGapEmpty"  text="obora nie ma zwierząt do oceny."/>
+        <text name="ar_bs_slotGapMargin" text="jego zwierzęta nie mają wycenionej produkcji miesięcznej, więc nie ma czego porównać z cielęciem."/>
+        <text name="ar_bs_slotGapBirth"  text="młodego tego zwierzęcia nie dało się wycenić."/>
+        <text name="ar_bs_slotGapCycle"  text="to zwierzę nie deklaruje cyklu rozrodczego, więc odchowalnia nie ma tempa."/>
+        <text name="ar_bs_lblAnimals"   text="Zwierzęta"/>
+        <text name="ar_bs_lblNow"       text="Przychód teraz"/>
+        <text name="ar_bs_addedSell"    text="Dodano: sprzedaj %d, %s. Zasady ustaw w zakładce ZASADY SPRZEDAŻY."/>
+        <text name="ar_bs_removedSell"  text="Usunięto: sprzedaj %d"/>
+        <text name="ar_bs_planNothing"  text="Te zasady nic teraz nie sprzedadzą w tej oborze."/>
+        <text name="ar_bs_notLive"      text="Automatyczna sprzedaż nie jest jeszcze włączona - użyj Sprzedaj teraz, by raz uruchomić zasady."/>
+
+        <!-- the policy switches, one per AnimalSellRules.DEFAULTS key the panel
+             exposes. The bijection is asserted by tools/animalsell.lua. -->
+        <text name="ar_pol_sellAtPeak"      text="Sprzedaj w szczycie wartości"/>
+        <text name="ar_pol_keepFreeSlots"   text="Wolne miejsca do zachowania"/>
+        <text name="ar_pol_headroomWorthIt" text="Zwalniaj miejsce, gdy się opłaca"/>
+        <text name="ar_pol_minHealthToSell" text="Nie sprzedawaj stada poniżej"/>
+        <text name="ar_pol_keepBreeders"    text="Nigdy poniżej (hodowlane)"/>
+        <text name="ar_pol_sellCalves"      text="Sprzedawaj młode (odchowalnia)"/>
+        <text name="ar_pol_on"          text="Wł"/>
+        <text name="ar_pol_off"         text="Wył"/>
+        <text name="ar_pol_noFloor"     text="Bez progu"/>
+        <text name="ar_pol_pct"         text="%d%% zdrowia"/>
+        <text name="ar_pol_autoSlots"   text="Automatycznie (kolejne porody)"/>
+
+        <!-- why the plan wants to sell a group. The codes are the engine's own
+             REASON_* values, so a new reason there shows as its raw code here
+             rather than silently as nothing. -->
+        <text name="ar_reason_headroom" text="by zrobić miejsce na porody"/>
+        <text name="ar_reason_peak"     text="w szczycie wartości"/>
+        <text name="ar_reason_calf"     text="młode (odchowalnia)"/>
+        <text name="ar_reason_earnings" text="zarabia mniej, niż traci"/>
+        <text name="ar_reason_order"    text="zlecenie stałe"/>
+        <!-- the rule summary carried on each order's row. TRIGGERS only: the
+             health and breeder floors never cause a sale, they prevent one, so
+             naming them beside these would read as reasons to sell. -->
+        <text name="ar_pol_sum_peak"    text="Szczyt"/>
+        <text name="ar_pol_sum_births"  text="Porody"/>
+        <text name="ar_pol_sum_nursery" text="Odchowalnia"/>
+        <text name="ar_pol_sum_none"    text="brak zasad"/>
+        <text name="ar_bs_colRules"     text="ZASADY"/>
+        <text name="ar_bs_orderTitle"     text="#%d  Sprzedaj %d %s"/>
+        <text name="ar_bs_orderTitleBare" text="#%d  Sprzedaj %d"/>
+        <text name="ar_bs_titlePaused"    text="%s  (wstrzymane)"/>
+        <text name="ar_bs_pausedTag"      text="  (wstrzymane)"/>
+        <text name="ar_bs_forever"        text="Na zawsze"/>
+        <text name="ar_bs_startIn"        text="Miesięcy do startu zakupów:"/>
+        <text name="ar_bs_startInSell"    text="Miesięcy do startu sprzedaży:"/>
+        <text name="ar_bs_startsIn"       text="start za %s"/>
+        <text name="ar_bs_progressOpen"   text="%d  w toku"/>
+        <text name="ar_bs_ongoing"        text="w toku"/>
+        <text name="ar_bs_noOrders"     text="Brak stałej sprzedaży w tej oborze - dodaj ją w zakładce ZLECENIA SPRZEDAŻY."/>
+        <text name="ar_bs_pickOrder"    text="Wybierz stałą sprzedaż, aby ustawić jej zasady."/>
+
+        <!-- ONE SENTENCE PER RULE, shown the moment the player touches it. A
+             two-word label cannot carry these and there is nowhere else on the
+             dialog to put them. -->
+        <text name="ar_pol_help_sellAtPeak"      text="Sprzedaj zwierzę, gdy będzie już tylko tracić na wartości. Krowa po szczycie wciąż produkuje, więc zadziała to tylko, gdy spadek przewyższa jej zarobek."/>
+        <text name="ar_pol_help_keepFreeSlots"   text="Trzymaj tyle wolnych miejsc, by młode miały gdzie trafić. Poród bez wolnego miejsca gra usuwa. Automatycznie wylicza, ile potrzeba na kolejny cykl."/>
+        <text name="ar_pol_help_headroomWorthIt" text="Zwalniaj miejsce na porody tylko wtedy, gdy sprzedane zwierzę jest warte mniej niż cielę, które by odchowało. Wyłącz, by zawsze robić miejsce, nawet ze stratą."/>
+        <text name="ar_pol_help_minHealthToSell" text="Nie sprzedawaj, dopóki średnie zdrowie STADA jest poniżej tej wartości. Chore stado osiąga tylko 40% wartości księgowej, więc karmienie opłaca się bardziej niż sprzedaż."/>
+        <text name="ar_pol_help_keepBreeders"    text="Nigdy nie schodź w oborze poniżej tylu zwierząt hodowlanych, by mogła się sama odtwarzać."/>
+        <text name="ar_pol_help_sellCalves"      text="Prowadź oborę jako odchowalnię: sprzedawaj każde młode zamiast je odchowywać. Jedna sprzedaż na cykl rozrodczy, z miejsca, które nigdy nie musi mieścić dorosłego zwierzęcia."/>
+
+        <!-- why a plan came back empty. The engine emits a note kind; the wording
+             is ours, because that module is pure. -->
+        <text name="ar_note_breeding"   text="Zwierzęta są warte mniej sprzedane niż cielęta, które by odchowały - wyłącz Zwalniaj miejsce, gdy się opłaca, by sprzedać mimo to."/>
+        <text name="ar_note_blocked"    text="Blokuje to próg zwierząt hodowlanych - obniż Nigdy poniżej (hodowlane)."/>
+        <text name="ar_note_held"       text="Stado jest poniżej progu zdrowia - nakarm je lub obniż Nie sprzedawaj stada poniżej."/>
+        <text name="ar_note_unsellable" text="Nic tu teraz nie może zostać sprzedane."/>
+        <text name="ar_note_nursery"    text="Ta obora zarobiłaby więcej jako odchowalnia - włącz Sprzedawaj młode."/>
+
+        <!-- SETTINGS, shown as an ANIMAL REDUX tab on Distribution Redux's own
+             Settings page. Titles sit in a fixed width column and the tooltip is
+             the only place with room to explain, so the title stays short and the
+             tooltip carries the consequence.
+             CHARACTER BUDGET: title around 34, tooltip wraps and is not clipped.
+             The tab caption is UPPERCASE to match DR's own tab beside it. -->
+        <!-- THE USER GUIDE TAB. The body is one long line per paragraph on purpose:
+             the page word-wraps to its own column count, so a hand-wrapped paragraph
+             renders ragged. "## " starts a sub-heading. -->
+        <text name="ar_help_tab"           text="ANIMAL REDUX"/>
+
+        <text name="ar_set_tab"            text="ANIMAL REDUX"/>
+        <text name="ar_set_off"            text="Wył"/>
+        <text name="ar_set_on"             text="Wł"/>
+
+        <text name="ar_set_trading"        text="Kupno / sprzedaż zwierząt"/>
+        <text name="ar_set_trading_tt"     text="Ręczne kupno i sprzedaż zwierząt z Inspektora stada. Wyłączone usuwa przycisk Kup / Sprzedaj. Nie dotyczy zleceń stałych - dla nich wyłącz Auto-handlarza."/>
+
+        <text name="ar_set_autoTrader"     text="Auto-handlarz"/>
+        <text name="ar_set_autoTrader_tt"  text="Stałe zlecenia kupna i sprzedaży działające samodzielnie. Wyłączenie usuwa przycisk Auto-handlarz oraz przyciski Zasady sprzedaży i Zasady zakupu I KASUJE wszystkie utworzone zlecenia. Najpierw pojawi się prośba o potwierdzenie."/>
+
+        <text name="ar_set_herdAdviser"       text="Doradca stada"/>
+        <text name="ar_set_herdAdviser_tt"    text="Podpowiedzi Animal Redux: dwa wiersze porad na panelu obory i kolumna ZALECENIE w zakładce Zwierzęta. Wyłączone je ukrywa. Wszystkie liczby, z których powstały, zostają na ekranie."/>
+
+        <text name="ar_set_advancedFeeder"    text="Zaawansowane karmienie zwierząt"/>
+        <text name="ar_set_advancedFeeder_tt" text="Animal Redux wylicza, jakiej paszy naprawdę potrzebuje każda obora, i prosi o nią Distribution Redux. Wyłączone oddaje karmienie własnym zasadom zaopatrzenia Distribution Redux."/>
+
+        <text name="ar_set_debug"          text="Rejestrowanie debugowania"/>
+        <text name="ar_set_debug_tt"       text="Dodatkowe wiersze Animal Redux w log.txt. Zostaw wyłączone, chyba że zgłaszasz problem. To, co naprawdę się psuje, i tak trafia do logu."/>
+
+        <!-- The confirmation raised when the Auto Trader is switched off. It NAMES
+             the counts, because "this will delete things" is not a question a
+             player can answer. -->
+        <text name="ar_set_clearTitle"     text="Wyłączyć Auto-handlarza?"/>
+        <text name="ar_set_clearText"      text="To usunie %d planów zakupu i %d zleceń sprzedaży. Nie można cofnąć."/>
+
+
+    </texts>
+</l10n>
