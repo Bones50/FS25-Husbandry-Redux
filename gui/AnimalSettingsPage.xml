@@ -9,10 +9,10 @@
      the opposite of DR's own settings page, where every row is hand authored and
      a missing one means the setting silently never appears (DR 5.41).
 
-     NO TAB STRIP: AR is the only provider here, so there is nothing to switch to.
-     The rows sit in a ScrollingLayout with its own slider, and the layout is NOT
-     given the 46px top offset DR's needs, precisely because there is no strip
-     above it to make room for.
+     A TAB STRIP APPEARS ONLY WHEN A SECOND MOD REGISTERS (AnimalPageTabs, added
+     2026-10-20 for Production Redux). With HR alone it is hidden and the layout
+     keeps its full height; with a strip the list swaps to ARSettingsLayoutTabbed,
+     which takes 46px off its top (AnimalSettingsPage:applyStripSpace).
 -->
 <GUI name="animalSettingsPage">
     <GuiElement profile="fs25_menuContainer">
@@ -23,6 +23,29 @@
             <Text profile="fs25_menuHeaderTitle" text="$l10n_ar_title_settings"/>
         </GuiElement>
 
+        <!-- THE TAB STRIP (2026-10-20), for a second mod's tab (Production Redux). HIDDEN while HR is
+             the only provider: AnimalPageTabs draws no labels for a single tab, and AnimalTabs.render
+             hides every slot with no label. Background BEFORE its button, children draw in order.
+             No A / D arrow buttons: their position would have to follow the tab count. The keys
+             themselves work (the menu asks the page, stepPageTabBy). -->
+        <Bitmap profile="ARList" position="0px 0px" size="1480px 40px">
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="16px 0px" size="146px 40px" name="arTabBg1" id="arTabBg1" visible="false"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="16px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn1" id="arTabBtn1" onClick="onTab1" visible="false"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="168px 0px" size="146px 40px" name="arTabBg2" id="arTabBg2" visible="false"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="168px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn2" id="arTabBtn2" onClick="onTab2" visible="false"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="320px 0px" size="146px 40px" name="arTabBg3" id="arTabBg3" visible="false"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="320px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn3" id="arTabBtn3" onClick="onTab3" visible="false"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="472px 0px" size="146px 40px" name="arTabBg4" id="arTabBg4" visible="false"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="472px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn4" id="arTabBtn4" onClick="onTab4" visible="false"/>
+        </Bitmap>
         <ScrollingLayout profile="fs25_settingsLayout" id="boxLayout">
             <Bitmap profile="fs25_multiTextOptionContainer" name="arRow1" id="arRow1" visible="false">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged"
@@ -86,7 +109,7 @@
              container carrying the layout's own profile so it inherits the same box and nothing here
              has to know the width. fs25_listSliderBox is anchorStretchingYRight in its own profile,
              so it lands just outside the list's right edge. -->
-        <GuiElement profile="fs25_settingsLayout">
+        <GuiElement profile="fs25_settingsLayout" id="settingsSliderBox">
             <ThreePartBitmap profile="fs25_listSliderBox" size="6px 100%">
                 <Slider profile="fs25_listSlider" dataElementId="boxLayout" id="settingsSlider"/>
             </ThreePartBitmap>

@@ -73,6 +73,10 @@ function AnimalMenu:setupPages()
           -- build that somehow ships without it still shows a tab rather than a blank square.
           -- ABSOLUTE PATH -- GuiOverlay does no mod-relative resolution (DR 5.80).
           iconFile = (HusbandryRedux.MOD_DIR or "") .. "gui/icon_herdInspector.dds" },
+        -- THE OVERVIEW (2026-10-20, "mirror DR's"): HR's Animals / Breeds instance, and the row every
+        -- other mod's overview tab maps to. nil if its load failed, and then its slot is simply removed.
+        { page = HerdInspectorPage ~= nil and HerdInspectorPage._overviewPage or nil,
+          slot = self.pageOverview, icon = "gui.icon_ingameMenu_statistics" },
         { page = HusbandryRedux ~= nil and HusbandryRedux._settingsPage or nil,
           slot = self.pageSettings, icon = "gui.icon_options_generalSettings2", buttons = { back } },
         { page = HusbandryRedux ~= nil and HusbandryRedux._helpPage or nil,
@@ -84,7 +88,14 @@ function AnimalMenu:setupPages()
     for _, d in ipairs(defs) do
         local page, slot = d.page, d.slot
         if page == nil then
-            print("[HusbandryRedux] setupPages: a page instance is missing (its load failed?)")
+            -- An unresolved FrameReference left in the paging element is a dead placeholder;
+            -- take it out rather than leave TabbedMenu something it will try to call.
+            if slot ~= nil and self.pagingElement ~= nil then
+                pcall(function() self.pagingElement:removeElement(slot) end)
+            end
+            if slot ~= self.pageOverview then
+                print("[HusbandryRedux] setupPages: a page instance is missing (its load failed?)")
+            end
         else
             -- SWAP THE PLACEHOLDER FOR THE REAL FRAME. The <FrameReference> resolves to a plain
             -- GuiElement, NOT to the instance handed to loadGui -- measured, after the standalone
@@ -262,6 +273,83 @@ function AnimalMenu:keyEvent(unicode, sym, modifier, isDown, eventUsed)
         end
     end
     return AnimalMenu:superClass().keyEvent(self, unicode, sym, modifier, isDown, eventUsed)
+end
+
+-- ---------------------------------------------------------------------------
+-- THE OVERVIEW'S OTHER TABS ARE NOT LEFT ROWS (2026-10-20). Another mod's overview tab is a page
+-- added to this menu (Production Redux does it), reached from the Overview's strip. It must not ALSO
+-- appear as a left icon, and while it is open the highlight belongs on the Overview row -- the
+-- identical treatment DR gives a page tab (DR 5.119, DistributionMenu:isOverviewTabPage).
+--
+-- A PAGE CANNOT BE HIDDEN BY DISABLING IT: the paging element drops a disabled page and resets off it
+-- (DR 5.102). So the LIST is filtered after the base builds it, and every page stays registered and
+-- reachable by goToPage. The row count is answered from the same filtered list so the two cannot
+-- disagree.
+local function isOverviewTabPage(page)
+    return AnimalPageTabs ~= nil and AnimalPageTabs.isOverviewTabPage ~= nil
+           and AnimalPageTabs.isOverviewTabPage(page)
+end
+
+---ONE ORDER FOR THE WHOLE REDUX FAMILY (author, 2026-10-20), whichever mods are loaded:
+--   [Distribution] [Husbandry] [Production] [Overview] [Settings] [Help]
+-- DR's menu applies the same rule when it hosts. Here (no DR) that is: the Herd Inspector, then any
+-- other mod's pages in FAMILY RANK (Production Redux), then Overview / Settings / Help. Another mod's
+-- page is APPENDED to this menu after it is built, so without this it would sit below Help.
+-- Ranked on pageName, never on load order. A missing mod's row drops out and the rest shift up.
+local FAMILY_RANK = { HERDINSPECTOR_PAGE = 1, PRODUCTIONREDUX_PAGE = 2 }
+
+function AnimalMenu:rebuildTabList()
+    AnimalMenu:superClass().rebuildTabList(self)
+    local ov = HerdInspectorPage ~= nil and HerdInspectorPage._overviewPage or nil
+    local tail = {}
+    for _, p in ipairs({ ov, HusbandryRedux ~= nil and HusbandryRedux._settingsPage or nil,
+                         HusbandryRedux ~= nil and HusbandryRedux._helpPage or nil }) do
+        if p ~= nil then tail[#tail + 1] = p end
+    end
+    local isTail = {}
+    for _, p in ipairs(tail) do isTail[p] = true end
+
+    local head, present, idx = {}, {}, {}
+    for i, p in ipairs(self.enabledPages or {}) do
+        present[p] = true
+        idx[p] = i
+        if not isOverviewTabPage(p) and not isTail[p] then head[#head + 1] = p end
+    end
+    table.sort(head, function(a, b)
+        local ra, rb = FAMILY_RANK[a.pageName] or 99, FAMILY_RANK[b.pageName] or 99
+        if ra ~= rb then return ra < rb end
+        return idx[a] < idx[b]
+    end)
+    local kept = head
+    for _, p in ipairs(tail) do
+        if present[p] then kept[#kept + 1] = p end
+    end
+    self.enabledPages = kept
+    if self.pagingTabList ~= nil then
+        pcall(function() self.pagingTabList:reloadData() end)
+        pcall(function() self.pagingTabList:setSelectedIndex(self:listIndexOf(self.currentPage)) end)
+    end
+end
+
+function AnimalMenu:listIndexOf(page)
+    local want = page
+    if isOverviewTabPage(page) and HerdInspectorPage ~= nil then want = HerdInspectorPage._overviewPage end
+    for i, p in ipairs(self.enabledPages or {}) do
+        if p == want then return i end
+    end
+    return 1
+end
+
+function AnimalMenu:getNumberOfItemsInSection(list, section)
+    if list == self.pagingTabList then return #(self.enabledPages or {}) end
+    return AnimalMenu:superClass().getNumberOfItemsInSection(self, list, section)
+end
+
+function AnimalMenu:onPageChange(pageIndex, pageMappingIndex, element, skipTabVisualUpdate)
+    AnimalMenu:superClass().onPageChange(self, pageIndex, pageMappingIndex, element, skipTabVisualUpdate)
+    if not skipTabVisualUpdate and self.pagingTabList ~= nil and isOverviewTabPage(self.currentPage) then
+        pcall(function() self.pagingTabList:setSelectedIndex(self:listIndexOf(self.currentPage)) end)
+    end
 end
 
 function AnimalMenu:onClickBack()

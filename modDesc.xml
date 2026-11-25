@@ -4,7 +4,7 @@
      silences the version notice. -->
 <modDesc descVersion="111">
     <author>Bones</author>
-    <version>0.0.0.3</version>
+    <version>0.0.0.4</version>
 
     <title>
         <en>Husbandry Redux</en>
@@ -21,7 +21,7 @@ adds its pages to the Distribution Redux menu and can plan feed through it. Two
 settings need Distribution Redux and say so in the settings screen when it is
 not installed; everything else works either way.
 
-Feedback/Issues: https://github.com/Bones50/FS25-Animal-Redux
+Feedback/Issues: https://github.com/Bones50/FS25-Husbandry-Redux
         ]]></en>
     </description>
 
@@ -44,6 +44,10 @@ Feedback/Issues: https://github.com/Bones50/FS25-Animal-Redux
         <sourceFile filename="scripts/AnimalPersist.lua"/>
         <sourceFile filename="scripts/AnimalSettings.lua"/>
         <sourceFile filename="scripts/AnimalHelp.lua"/>
+        <!-- AFTER AnimalSettings and AnimalHelp: its own tab reads their rows and topics.
+             It publishes HusbandryRedux.API, the tab registry another mod (Production Redux)
+             uses to put its settings and guide on HR's own pages. -->
+        <sourceFile filename="scripts/AnimalPageTabs.lua"/>
         <sourceFile filename="scripts/AnimalPanel.lua"/>
         <sourceFile filename="scripts/AnimalHerdData.lua"/>
         <sourceFile filename="scripts/AnimalFeedModel.lua"/>

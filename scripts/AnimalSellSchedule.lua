@@ -66,11 +66,137 @@ end
 -- than copied: two implementations of one calendar is how they come to disagree,
 -- and that side is harnessed at 145 checks including the bug 23.8a fixed.
 -- ---------------------------------------------------------------------------
-function AnimalSellSchedule.totalRuns(s) return AnimalBuySchedule.totalRuns(s) end
-function AnimalSellSchedule.isFinished(s) return AnimalBuySchedule.isFinished(s) end
-function AnimalSellSchedule.isForever(s) return AnimalBuySchedule.isForever(s) end
-function AnimalSellSchedule.isDue(s, month) return AnimalBuySchedule.isDue(s, month) end
+function AnimalSellSchedule.totalRuns(s)
+    if AnimalSellSchedule.isAge(s) then return math.huge end
+    return AnimalBuySchedule.totalRuns(s)
+end
+function AnimalSellSchedule.isFinished(s)
+    if AnimalSellSchedule.isAge(s) then return false end
+    return AnimalBuySchedule.isFinished(s)
+end
+function AnimalSellSchedule.isForever(s)
+    if AnimalSellSchedule.isAge(s) then return true end
+    return AnimalBuySchedule.isForever(s)
+end
+---AN AGE ORDER IS ALWAYS DUE while it is enabled: it has no calendar, it watches the
+-- breed and sells whatever has reached the age, every hour the driver runs.
+function AnimalSellSchedule.isDue(s, month)
+    if AnimalSellSchedule.isAge(s) then return s.enabled ~= false end
+    return AnimalBuySchedule.isDue(s, month)
+end
 function AnimalSellSchedule.currentMonth() return AnimalBuySchedule.currentMonth() end
+
+-- ---------------------------------------------------------------------------
+-- THE AGE ORDER (2026-10-19, author's spec): "sell animals once they reach a certain
+-- age", an OR beside the schedule. One BREED in one barn, one age in months, and it
+-- runs until the player removes it. No guards: it is completely player driven, so
+-- it sells every animal of the breed at or past the age, whatever it fetches.
+--
+-- WHILE IT IS ACTIVE IT OWNS THE BREED IN THAT BARN: nothing else may trade it there
+-- -- not a schedule sell order, not a buy order, not Buy / Sell by hand. A PAUSED age
+-- order is not active and releases the breed. `ageLock` is the one question every
+-- other trade path asks.
+-- ---------------------------------------------------------------------------
+AnimalSellSchedule.KIND_AGE = "age"
+AnimalSellSchedule.MAX_AGE  = 600
+
+function AnimalSellSchedule.isAge(s)
+    return type(s) == "table" and s.kind == AnimalSellSchedule.KIND_AGE
+end
+
+---The ACTIVE age order holding `breed` in barn `uid`, or nil.
+function AnimalSellSchedule.ageLock(uid, breed)
+    if type(uid) ~= "string" or type(breed) ~= "string" then return nil end
+    for _, s in ipairs(AnimalSellSchedule.orders) do
+        if AnimalSellSchedule.isAge(s) and s.enabled ~= false and s.uid == uid and s.breed == breed then
+            return s
+        end
+    end
+    return nil
+end
+
+---The age order on `breed` in barn `uid`, ACTIVE OR PAUSED, or nil.
+function AnimalSellSchedule.ageOrderFor(uid, breed)
+    for _, s in ipairs(AnimalSellSchedule.orders) do
+        if AnimalSellSchedule.isAge(s) and s.uid == uid and s.breed == breed then return s end
+    end
+    return nil
+end
+
+---Every breed an active age order holds in barn `uid`, as a set. Empty when none.
+function AnimalSellSchedule.lockedBreeds(uid)
+    local out = {}
+    for _, s in ipairs(AnimalSellSchedule.orders) do
+        if AnimalSellSchedule.isAge(s) and s.enabled ~= false and s.uid == uid and type(s.breed) == "string" then
+            out[s.breed] = s
+        end
+    end
+    return out
+end
+
+---The age order a BUY of this dealer row would collide with, or nil. A dealer row
+-- may not name its subtype (23.2), so where it does not, the breed is recognised the
+-- way the per-breed Auto Trader already recognises it (breedEvidence / rowIsBreed).
+-- `c` is a catalogue entry ({ subType, row, title }) or a raw trade row.
+function AnimalSellSchedule.buyLock(uid, c)
+    local locks = AnimalSellSchedule.lockedBreeds(uid)
+    if next(locks) == nil or type(c) ~= "table" then return nil end
+    local entry = c
+    if c.row == nil and c.item ~= nil then
+        entry = { row = c, title = c.name,
+                  subType = AnimalBuySchedule ~= nil and AnimalBuySchedule.subTypeNameOf ~= nil
+                            and AnimalBuySchedule.subTypeNameOf(c) or nil }
+    end
+    if entry.subType ~= nil then return locks[entry.subType] end
+    if AnimalBuySchedule == nil or AnimalBuySchedule.breedEvidence == nil then return nil end
+    AnimalSellSchedule._evCache = AnimalSellSchedule._evCache or {}
+    for breed, s in pairs(locks) do
+        local ev = AnimalSellSchedule._evCache[breed]
+        if ev == nil then
+            ev = AnimalBuySchedule.breedEvidence(breed)
+            AnimalSellSchedule._evCache[breed] = ev
+        end
+        if AnimalBuySchedule.rowIsBreed(entry, ev) then return s end
+    end
+    return nil
+end
+
+---What an age order would sell from barn `p` right now: every cluster of its breed
+-- at or past the age, oldest first, whole clusters. No refusal of any kind.
+function AnimalSellSchedule.agePlan(p, s, priceFn)
+    local plan = { lines = {}, total = 0, revenue = 0, notes = {} }
+    if p == nil or not AnimalSellSchedule.isAge(s) or AnimalSellRules == nil then return plan end
+    local okA, a = pcall(AnimalSellRules.assess, p)
+    if not okA or a == nil then return plan end
+    plan.assess = a
+    local pick = {}
+    for _, c in ipairs(a.clusters or {}) do
+        if c.name == s.breed and (c.count or 0) > 0 and (c.age or 0) >= s.ageMonths then
+            pick[#pick + 1] = c
+        end
+    end
+    table.sort(pick, function(x, y)
+        if (x.age or 0) ~= (y.age or 0) then return (x.age or 0) > (y.age or 0) end
+        return (x.healthPct or 0) < (y.healthPct or 0)
+    end)
+    for _, c in ipairs(pick) do
+        local n = c.count
+        local rev = (c.each or 0) * n
+        if priceFn ~= nil then
+            local ok, v = pcall(priceFn, c.cluster, n)
+            if ok and type(v) == "number" then rev = v end
+        end
+        plan.lines[#plan.lines + 1] = {
+            cluster = c.cluster, name = c.name, count = n,
+            reason = AnimalSellRules.REASON_ORDER,
+            each = c.each, revenue = rev, gross = (c.each or 0) * n,
+            age = c.age, healthPct = c.healthPct,
+        }
+        plan.total = plan.total + n
+        plan.revenue = plan.revenue + rev
+    end
+    return plan
+end
 
 ---Book a run that actually sold something. Same rule as the buy side: a run that
 -- sold NOTHING does not consume an occurrence, so a month in which every animal
@@ -80,8 +206,34 @@ function AnimalSellSchedule.recordRun(s, sold, revenue)
     s.runsDone = s.runsDone + 1
     s.sold     = s.sold + sold
     s.revenue  = s.revenue + math.abs(revenue or 0)
-    s.nextMonth = s.nextMonth + math.max(1, s.everyMonths)
+    -- an age order has no calendar to advance
+    if not AnimalSellSchedule.isAge(s) then
+        s.nextMonth = s.nextMonth + math.max(1, s.everyMonths)
+    end
     return true
+end
+
+---The age order's half of validate: a barn, a breed, an age. Everything the schedule
+-- fields mean is filled with an inert value so code reading them cannot throw.
+function AnimalSellSchedule._validateAge(f, int)
+    local breed = f.breed
+    if type(breed) ~= "string" or breed == "" then return nil, "no breed" end
+    local age = int(f.ageMonths)
+    if age == nil or age < 1 or age > AnimalSellSchedule.MAX_AGE then
+        return nil, string.format("age must be 1..%d months", AnimalSellSchedule.MAX_AGE)
+    end
+    return {
+        id = f.id, kind = AnimalSellSchedule.KIND_AGE, uid = f.uid,
+        barnName   = type(f.barnName) == "string" and f.barnName or "?",
+        animalName = (type(f.animalName) == "string" and f.animalName ~= "") and f.animalName or nil,
+        breed = breed, ageMonths = age,
+        cfg = {}, count = 0, everyMonths = 1, forMonths = AnimalBuySchedule.FOREVER,
+        startMonth = int(f.startMonth) or 0, startIn = 0, nextMonth = 0,
+        runsDone = int(f.runsDone) or 0, sold = int(f.sold) or 0,
+        revenue  = tonumber(f.revenue) or 0,
+        enabled  = f.enabled ~= false,
+        note     = type(f.note) == "string" and f.note or "",
+    }
 end
 
 function AnimalSellSchedule.validate(f)
@@ -90,6 +242,7 @@ function AnimalSellSchedule.validate(f)
 
     local uid = f.uid
     if type(uid) ~= "string" or uid == "" then return nil, "no barn" end
+    if f.kind == AnimalSellSchedule.KIND_AGE then return AnimalSellSchedule._validateAge(f, int) end
     local count = int(f.count)
     local every = int(f.everyMonths)
     local forM  = int(f.forMonths)
@@ -137,6 +290,9 @@ function AnimalSellSchedule.validate(f)
         -- breed: an order is not breed-scoped, so naming one breed would be a lie
         -- on any barn holding two.
         animalName  = (type(f.animalName) == "string" and f.animalName ~= "") and f.animalName or nil,
+        -- THE ONE BREED IT SELLS (2026-10-19). nil only on an order saved before breeds
+        -- were recorded, which keeps selling across the barn as it always did.
+        breed       = (type(f.breed) == "string" and f.breed ~= "") and f.breed or nil,
         cfg         = cfg,
         count       = count,
         everyMonths = every,
@@ -155,6 +311,18 @@ function AnimalSellSchedule.validate(f)
 end
 
 function AnimalSellSchedule.describe(s)
+    if not AnimalSellSchedule.isAge(s) and s.breed ~= nil then
+        local runs = AnimalSellSchedule.totalRuns(s)
+        return string.format("#%s %s: sell %d %s every %d mo -- %d/%s runs, %d sold%s",
+            tostring(s.id), tostring(s.barnName), s.count, tostring(s.breed), s.everyMonths,
+            s.runsDone, runs == math.huge and "*" or tostring(runs), s.sold,
+            s.enabled and "" or " [PAUSED]")
+    end
+    if AnimalSellSchedule.isAge(s) then
+        return string.format("#%s %s: sell every %s at %d months -- %d sold%s",
+            tostring(s.id), tostring(s.barnName), tostring(s.breed), s.ageMonths, s.sold,
+            s.enabled and "" or " [PAUSED]")
+    end
     local runs = AnimalSellSchedule.totalRuns(s)
     return string.format("#%s %s: sell %d every %d mo, %s%s -- %d/%s runs, %d sold%s",
         tostring(s.id), tostring(s.barnName), s.count, s.everyMonths,
@@ -170,6 +338,11 @@ function AnimalSellSchedule.add(fields)
     end
     local rec, why = AnimalSellSchedule.validate(fields)
     if rec == nil then return nil, why end
+    -- ONE AGE ORDER PER BREED PER BARN, paused or not: two would be two owners of
+    -- one breed the moment the paused one was resumed
+    if AnimalSellSchedule.isAge(rec) and AnimalSellSchedule.ageOrderFor(rec.uid, rec.breed) ~= nil then
+        return nil, "this breed already has an age order in this barn"
+    end
     if rec.id == nil then
         rec.id = AnimalSellSchedule._nextId
         AnimalSellSchedule._nextId = AnimalSellSchedule._nextId + 1
@@ -259,8 +432,29 @@ function AnimalSellSchedule.buildPlan(p, s)
         if okF then priceFn = fn end
     end
 
-    local okP, plan = pcall(AnimalSellRules.orderPlan, p, s.count, priceFn)
+    if AnimalSellSchedule.isAge(s) then
+        local okG, gplan = pcall(AnimalSellSchedule.agePlan, p, s, priceFn)
+        if not okG or type(gplan) ~= "table" then return nil, "the sale could not be planned" end
+        if gplan.total == 0 then
+            return nil, string.format("no %s at %d months or older", tostring(s.breed), s.ageMonths)
+        end
+        return gplan, nil
+    end
+
+    -- A BREED AN AGE ORDER HOLDS IN THIS BARN IS NOT THIS ORDER'S TO SELL
+    local skip = AnimalSellSchedule.lockedBreeds(s.uid)
+    if next(skip) == nil then skip = nil end
+    local okP, plan = pcall(AnimalSellRules.orderPlan, p, s.count, priceFn, skip, s.breed)
     if not okP or type(plan) ~= "table" then return nil, "the sale could not be planned" end
+    if plan.total == 0 and plan.skipped ~= nil and plan.skipped > 0 then
+        if s.breed ~= nil then
+            return nil, string.format("%s is held by an age order", tostring(s.breed))
+        end
+        return nil, "every animal left here is held by an age order"
+    end
+    if plan.total == 0 and s.breed ~= nil then
+        return nil, string.format("no %s in this barn", tostring(s.breed))
+    end
     if plan.total == 0 then
         -- A REAL DISTINCTION, and the screen needs both: an empty barn is not the
         -- same as a barn whose every animal would sell at a loss.
@@ -288,8 +482,7 @@ function AnimalSellSchedule.runOne(s)
        or not AnimalSellExecutor.canRun() then
         return 0, 0, "cannot sell here"
     end
-    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
-    local p = (SD ~= nil and SD.placeableByUid ~= nil) and SD.placeableByUid(s.uid) or nil
+    local p = HusbandryRedux.barnByUid(s.uid)      -- with or without DR (2026-11-25)
     if p == nil then return 0, 0, "barn not found" end
 
     local plan, note = AnimalSellSchedule.buildPlan(p, s)
@@ -332,9 +525,14 @@ function AnimalSellSchedule.runDue()
                      tostring(math.floor((revenue or 0) + 0.5)), s.runsDone,
                      runs == math.huge and "forever" or tostring(runs),
                      note ~= nil and (" -- " .. note) or "")
-            elseif s.note ~= AnimalSellSchedule._lastNote then
-                -- a repeated blocker would otherwise print every game day
-                AnimalSellSchedule._lastNote = s.note
+            elseif AnimalSellSchedule.isAge(s) then
+                -- an age order is checked every hour and normally has nothing of
+                -- age yet: that is its resting state, not a failure worth a line
+            elseif s.note ~= s._loggedNote then
+                -- a repeated blocker would otherwise print every game day. Per ORDER:
+                -- one shared "last note" flips between two orders and prints both
+                -- every time.
+                s._loggedNote = s.note
                 warn("sell order #%s sold nothing: %s", tostring(s.id), tostring(s.note))
             end
         end
@@ -364,6 +562,11 @@ local function saveSection(xml, key)
                 else setXMLInt(xml, k .. ".rule#" .. fl.key, v) end
             end
         end
+        if AnimalSellSchedule.isAge(s) then
+            setXMLString(xml, k .. "#kind",      s.kind)
+            setXMLInt(xml,    k .. "#ageMonths", s.ageMonths)
+        end
+        if s.breed ~= nil then setXMLString(xml, k .. "#breed", s.breed) end
         setXMLInt(xml,    k .. "#count",       s.count)
         setXMLInt(xml,    k .. "#everyMonths", s.everyMonths)
         setXMLInt(xml,    k .. "#forMonths",   s.forMonths)
@@ -410,6 +613,9 @@ local function loadSection(xml, key)
             uid         = getXMLString(xml, k .. "#uid"),
             barnName    = getXMLString(xml, k .. "#barnName"),
             animalName  = getXMLString(xml, k .. "#animalName"),
+            kind        = getXMLString(xml, k .. "#kind"),
+            breed       = getXMLString(xml, k .. "#breed"),
+            ageMonths   = getXMLInt(xml,    k .. "#ageMonths"),
             cfg         = AnimalSellSchedule._readRules(xml, k),
             count       = getXMLInt(xml,    k .. "#count"),
             everyMonths = getXMLInt(xml,    k .. "#everyMonths"),

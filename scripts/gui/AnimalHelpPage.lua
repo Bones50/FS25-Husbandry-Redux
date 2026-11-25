@@ -4,10 +4,9 @@
 -- tab on DR's User Guide page (AnimalHelp.install), and this file is never loaded. The CONTENT is
 -- the same either way: both read AnimalHelp.topics(), so there is one guide, not two.
 --
--- NO TAB STRIP. DR's equivalent has one because two mods write into that page; here AR is the only
--- provider and a strip would show a single tab with nothing to switch to. A registry so a THIRD mod
--- could add one is deliberately not built: there is no such mod, and DR 5.88 records what inventing
--- a contract before it has a caller costs.
+-- TABS: HR's own guide, plus any mod that registered with HusbandryRedux.API (AnimalPageTabs, built
+-- 2026-10-20 once Production Redux became the caller 31.0 was waiting for). The strip shows only
+-- when there are two or more.
 
 AnimalHelpPage = {}
 local AnimalHelpPage_mt = Class(AnimalHelpPage, AnimalMenuPage)
@@ -65,7 +64,17 @@ local function buildLines(body, cols)
     return out
 end
 
-local function topicsOf()
+---The CURRENT TAB's topics (AnimalPageTabs, 2026-10-20). With no other provider registered this
+-- is exactly AnimalHelp.topics() and the strip stays hidden.
+local function topicsOf(page)
+    if AnimalPageTabs ~= nil then
+        local tabs = AnimalPageTabs.tabs("help")
+        local t = tabs[(page ~= nil and page.currentTab) or 1] or tabs[1]
+        if t == nil then return {} end
+        local ok, r = pcall(t.content)
+        if ok and type(r) == "table" then return r end
+        return {}
+    end
     if AnimalHelp == nil or AnimalHelp.topics == nil then return {} end
     local ok, t = pcall(AnimalHelp.topics)
     if not ok or type(t) ~= "table" then return {} end
@@ -95,7 +104,8 @@ function AnimalHelpPage:onFrameOpen()
     AnimalHelpPage:superClass().onFrameOpen(self)
     -- RE-READ ON EVERY OPEN. AnimalHelp.topics resolves its l10n at call time, so a guide read once
     -- at load would be stuck with whatever language was up then.
-    self.topicRows = topicsOf()
+    if AnimalPageTabs ~= nil then AnimalPageTabs.draw(self, AnimalPageTabs.tabs("help")) end
+    self.topicRows = topicsOf(self)
     local n = #self.topicRows
     if self.currentTopic == nil or self.currentTopic > n then self.currentTopic = 1 end
     if self.topicList ~= nil then self.topicList:reloadData() end
@@ -127,6 +137,39 @@ function AnimalHelpPage:populateCellForItemInSection(list, section, index, cell)
     -- paragraph inherits the bold of whichever heading last used that slot (DR 5.7 / 5.57).
     if c.setTextBold ~= nil then pcall(c.setTextBold, c, row.head == true) end
 end
+
+---Switch tab: redraw the strip and show the new tab's topics from the first one. Topic 4 of one
+-- mod's guide has nothing to do with topic 4 of another's (DR 5.87).
+function AnimalHelpPage:showTab(n)
+    self.currentTab = n
+    if AnimalPageTabs ~= nil then AnimalPageTabs.draw(self, AnimalPageTabs.tabs("help")) end
+    self.topicRows = topicsOf(self)
+    self.currentTopic = 1
+    if self.topicList ~= nil then self.topicList:reloadData() end
+    self:selectTopic(1)
+end
+
+function AnimalHelpPage:stepPageTabBy(delta)
+    if AnimalPageTabs == nil then return false end
+    local tabs = AnimalPageTabs.tabs("help")
+    local was = self.currentTab or 1
+    if not AnimalPageTabs.step(self, tabs, delta) then return false end
+    local now = self.currentTab
+    self.currentTab = was
+    self:showTab(now)
+    return true
+end
+
+function AnimalHelpPage:onTabSlot(n)
+    if AnimalPageTabs == nil then return end
+    local tabs = AnimalPageTabs.tabs("help")
+    if tabs[n] == nil or n == (self.currentTab or 1) then return end
+    self:showTab(n)
+end
+function AnimalHelpPage:onTab1() return self:onTabSlot(1) end
+function AnimalHelpPage:onTab2() return self:onTabSlot(2) end
+function AnimalHelpPage:onTab3() return self:onTabSlot(3) end
+function AnimalHelpPage:onTab4() return self:onTabSlot(4) end
 
 ---A click anywhere in the contents jumps to that topic. Selection alone is enough -- the list is
 -- wired to onTopicChanged -- but the callback exists so a click on an ALREADY selected row still

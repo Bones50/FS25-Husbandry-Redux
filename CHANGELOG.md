@@ -1,7 +1,17 @@
 # CHANGELOG
 
-Changelog Last updated: 29/09/2026
-<h2><b>V0.0.0.1 - Pre-Release Test Version</b></h2>
+Changelog Last updated: 25/11/2026
+<h2><b>V0.0.0.4 - Pre-Release Test Version</b></h2>
+
+ADDED
+1) Ability to set a breed to sell by age. Onjce any animal of that breed reaches the desired age it will be sold. Can set different sell ages for different breeds.
+2) Husbandry Redux's own tabs API, so other Redux mods can add their pages to its menu when Distribution Redux is not installed.
+
+FIXED
+1) Saves from the Animal Redux days load their orders, herd purposes, feed switches and settings again.
+2) Without Distribution Redux, Auto Trader orders now run and per-barn settings survive a reload.
+
+<h2><b>V0.0.0.3 - Pre-Release Test Version</b></h2>
 
 FIXED
 1) Barns with feeding robots now work correctly
@@ -13,6 +23,11 @@ ADDED
 4) Added the Husbandry Redux overview pages (Animals Groups OR Breeds view). Will give you and overview of all the animals on your farm and includes reccomendations from the her adviser.
 5) Buy and sell orders now fully implemented and working. You can set how many, how often, when to start and how many months to sell for.
 6) Advanced Feeding can be swicthed on and off per barn (i.e. letting HR determine optimal food mix and request that from DR rather than the DR default)
+
+<h2><b>V0.0.0.2 - Pre-Release Test Version</b></h2>
+
+ADDED
+1) Removed Dependency Between Animal Redux and Distirbution Redux.
 
 <h2><b>V0.0.0.1 - Pre-Release Test Version</b></h2>
 

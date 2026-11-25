@@ -450,7 +450,7 @@
         <text name="ar_bs_slotGapCycle"  text="this animal declares no breeding cycle, so a nursery has no rate."/>
         <text name="ar_bs_lblAnimals"   text="Animals"/>
         <text name="ar_bs_lblNow"       text="Revenue now"/>
-        <text name="ar_bs_addedSell"    text="Added: sell %d, %s. Set its rules on the SELL RULES tab."/>
+        <text name="ar_bs_addedSellBreed" text="Added: sell %d %s every %s."/>
         <text name="ar_bs_removedSell"  text="Removed: sell %d"/>
         <text name="ar_bs_planNothing"  text="These rules would sell nothing on this barn right now."/>
         <text name="ar_bs_sellRunsAt"   text="Sells within the hour once due - set it for the month before births so they have room."/>
@@ -487,6 +487,24 @@
         <text name="ar_bs_colRules"     text="RULES"/>
         <text name="ar_bs_orderTitle"     text="#%d  Sell %d %s"/>
         <text name="ar_bs_orderTitleBare" text="#%d  Sell %d"/>
+        <text name="ar_bs_orderTitleAge" text="#%d  Sell %s at %d months"/>
+        <text name="ar_bs_sellBy" text="Sell by:"/>
+        <text name="ar_bs_sellBySchedule" text="Schedule"/>
+        <text name="ar_bs_sellByAge" text="Age"/>
+        <text name="ar_bs_ageAt" text="Sell at age (months):"/>
+        <text name="ar_bs_lblOfAge" text="Of age now"/>
+        <text name="ar_bs_lblSellsNow" text="Sells now for"/>
+        <text name="ar_bs_lblRuns" text="Runs"/>
+        <text name="ar_bs_untilRemoved" text="until removed"/>
+        <text name="ar_bs_heldByAge" text="Age order #%d sells every %s in this barn at %d months. Pause or remove it to trade this breed another way."/>
+        <text name="ar_bs_agePickBreed" text="Pick the breed to sell by age in the list above."/>
+        <text name="ar_bs_ageExplain" text="Sells every %s in this barn the hour it reaches the age, until you remove the order. While it is active, %s cannot be bought or sold any other way in this barn."/>
+        <text name="ar_bs_soldN" text="%d sold"/>
+        <text name="ar_bs_atAge" text="at %d mo"/>
+        <text name="ar_bs_watching" text="watching"/>
+        <text name="ar_bs_addedAge" text="Added: sell every %s at %d months, until removed."/>
+        <text name="ar_bs_removedAge" text="Removed: sell %s at %d months"/>
+        <text name="ar_td_heldByAge" text="Age order #%d sells every %s here at %d months. Pause or remove it to trade this breed by hand."/>
         <text name="ar_bs_titlePaused"    text="%s  (paused)"/>
         <text name="ar_bs_pausedTag"      text="  (paused)"/>
         <text name="ar_bs_forever"        text="Forever"/>

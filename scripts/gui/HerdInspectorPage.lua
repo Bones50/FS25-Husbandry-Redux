@@ -1398,12 +1398,22 @@ function HerdInspectorPage:initViewOption()
 end
 
 -- ---- THE OVERVIEW PAGE ---------------------------------------------------------------------
----DR's Overview tabs, as copies from its API (v15). Empty when DR cannot answer, which leaves the
--- strip empty rather than wrong.
-local function overviewTabs()
+---WHOSE OVERVIEW THIS PAGE STANDS IN. DR's when DR hosts it (API v15); otherwise HR's own, from
+-- AnimalPageTabs (2026-10-20) -- same three calls, same shapes, so nothing below needs to know which.
+local function overviewApi()
     local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
-    if SD == nil or SD.API == nil or SD.API.overviewTabs == nil then return {} end
-    local ok, t = pcall(SD.API.overviewTabs)
+    if SD ~= nil and SD.API ~= nil and SD.API.overviewTabs ~= nil then return SD.API end
+    local api = HusbandryRedux ~= nil and HusbandryRedux.API or nil
+    if api ~= nil and api.overviewTabs ~= nil then return api end
+    return nil
+end
+
+---The Overview's tabs, as copies. Empty when nothing can answer, which leaves the strip empty
+-- rather than wrong.
+local function overviewTabs()
+    local api = overviewApi()
+    if api == nil then return {} end
+    local ok, t = pcall(api.overviewTabs)
     return (ok and type(t) == "table") and t or {}
 end
 
@@ -1418,9 +1428,9 @@ local function overviewOwnIndex(tabs)
 end
 
 local function goOverviewTab(i)
-    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
-    if SD == nil or SD.API == nil or SD.API.selectOverviewTab == nil then return false end
-    return SD.API.selectOverviewTab(i) == true
+    local api = overviewApi()
+    if api == nil or api.selectOverviewTab == nil then return false end
+    return api.selectOverviewTab(i) == true
 end
 
 ---THE HEADER STRIP ON THE OVERVIEW PAGE IS THE OVERVIEW'S. The player reached this page from a
@@ -3018,6 +3028,28 @@ function HerdInspectorPage.install(menu)
 
     HerdInspectorPage._page = page
     HerdInspectorPage._pages = { page }
+    if standalone then
+        -- THE OVERVIEW SPLIT, WITHOUT DR (2026-10-20, "mirror DR's"). A second instance in
+        -- MODE_OVERVIEW carries Animals / Breeds on HR's own Overview icon, and this one becomes the
+        -- per-type Herd Inspector, exactly as under DR. Loaded under the name AnimalMenu.xml's
+        -- pageOverview FrameReference expects. A failure leaves everything on this page -- the
+        -- layout before the split -- so nothing is ever unreachable.
+        local okO = pcall(function()
+            local ov = HerdInspectorPage.new()
+            ov.pageName = "HERDINSPECTOR_OVERVIEW_PAGE"
+            ov.hostMode = HerdInspectorPage.MODE_OVERVIEW
+            ov.viewIndex = HerdInspectorPage.VIEW_BREEDS
+            g_gui:loadGui(pageXml, "animalOverviewPage", ov, true)
+            if ov.setMenuButtonInfo ~= nil then ov:setMenuButtonInfo(buttons) end
+            HerdInspectorPage._pages[#HerdInspectorPage._pages + 1] = ov
+            HerdInspectorPage._overviewPage = ov
+        end)
+        if okO and HerdInspectorPage._overviewPage ~= nil then
+            page.hostMode = HerdInspectorPage.MODE_TYPES
+        elseif HusbandryRedux ~= nil and HusbandryRedux.warn ~= nil then
+            HusbandryRedux.warn("standalone Overview page failed to load; Animals / Breeds stay on the Herd Inspector")
+        end
+    end
     if not standalone then
         local okO, why = HerdInspectorPage.installOverviewPage(menu, SD, pageXml, buttons)
         if okO then

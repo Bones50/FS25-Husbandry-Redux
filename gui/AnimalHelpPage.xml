@@ -3,11 +3,9 @@
      Only loaded when Distribution Redux is absent; with DR present the same
      topics are registered as a tab on DR's User Guide page instead.
 
-     NO TAB STRIP, deliberately. DR's equivalent carries one because two mods
-     write into that page; here AR is the only provider, so a strip would show a
-     single tab with nothing to switch to. The rule the author chose is that the
-     strip appears only when a second provider exists, and there is no second
-     provider to build one for yet.
+     A TAB STRIP APPEARS ONLY WHEN A SECOND MOD REGISTERS (AnimalPageTabs, added
+     2026-10-20 for Production Redux), the rule the author chose for DR's pages too.
+     It sits in the empty band above the lists, so nothing moves to make room.
 
      TWO LISTS: contents on the left, the selected topic's body on the right.
      Each has its own slider, because a SmoothList with ignoreMouse set loses
@@ -22,6 +20,29 @@
             <Text profile="fs25_menuHeaderTitle" text="$l10n_ar_title_help"/>
         </GuiElement>
 
+        <!-- THE TAB STRIP (2026-10-20), for a second mod's tab (Production Redux). HIDDEN while HR is
+             the only provider: AnimalPageTabs draws no labels for a single tab, and AnimalTabs.render
+             hides every slot with no label. Background BEFORE its button, children draw in order.
+             No A / D arrow buttons: their position would have to follow the tab count. The keys
+             themselves work (the menu asks the page, stepPageTabBy). -->
+        <Bitmap profile="ARList" position="0px 0px" size="1480px 40px">
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="16px 0px" size="146px 40px" name="arTabBg1" id="arTabBg1" visible="false"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="16px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn1" id="arTabBtn1" onClick="onTab1" visible="false"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="168px 0px" size="146px 40px" name="arTabBg2" id="arTabBg2" visible="false"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="168px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn2" id="arTabBtn2" onClick="onTab2" visible="false"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="320px 0px" size="146px 40px" name="arTabBg3" id="arTabBg3" visible="false"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="320px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn3" id="arTabBtn3" onClick="onTab3" visible="false"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="472px 0px" size="146px 40px" name="arTabBg4" id="arTabBg4" visible="false"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="472px 0px" size="146px 40px" textAutoWidth="false"
+                    name="arTabBtn4" id="arTabBtn4" onClick="onTab4" visible="false"/>
+        </Bitmap>
         <!-- left: the table of contents -->
         <GuiElement profile="ARList" position="40px -96px" size="460px 760px">
             <SmoothList profile="ARList" id="topicList" position="0px 0px" size="460px 760px"

@@ -31,8 +31,20 @@ end
 ---Read the rows and paint them. Called on open and after every change, so a setter that alters
 -- another row (or refuses) is reflected immediately rather than at the next open.
 function AnimalSettingsPage:renderRows()
+    -- THE ROWS COME FROM THE CURRENT TAB (AnimalPageTabs, 2026-10-20): HR's own first, then any
+    -- mod that registered with HusbandryRedux.API. With no other provider this is exactly
+    -- AnimalSettings.rows() and the strip stays hidden, so HR alone is unchanged.
     local rows = {}
-    if AnimalSettings ~= nil and AnimalSettings.rows ~= nil then
+    local tabs = (AnimalPageTabs ~= nil) and AnimalPageTabs.tabs("settings") or nil
+    if tabs ~= nil then
+        local shown = AnimalPageTabs.draw(self, tabs)
+        self:applyStripSpace(shown > 0)
+        local t = tabs[self.currentTab or 1] or tabs[1]
+        if t ~= nil then
+            local ok, r = pcall(t.content)
+            if ok and type(r) == "table" then rows = r end
+        end
+    elseif AnimalSettings ~= nil and AnimalSettings.rows ~= nil then
         local ok, r = pcall(AnimalSettings.rows)
         if ok and type(r) == "table" then rows = r end
     end
@@ -101,6 +113,43 @@ function AnimalSettingsPage:renderRows()
         pcall(self.boxLayout.invalidateLayout, self.boxLayout)
     end
 end
+
+---MAKE ROOM FOR THE STRIP, only while it shows. fs25_settingsLayout fills the container from the
+-- top, so a strip at y=0 would sit on row one. The tabbed profile pins the list to the BOTTOM and
+-- shrinks it by 46px, taking the space off the top (DR 5.87b). `with` is read on PROFILES only, so
+-- it cannot be an attribute on the element (DR 5.87a).
+-- applyProfile then setSize: setSize is what recomputes the anchor deltas, without which the new
+-- size is silently discarded on an element already laid out (DR 5.90). Both the list and the
+-- slider's wrapper move, or the scrollbar keeps the old height.
+function AnimalSettingsPage:applyStripSpace(hasStrip)
+    local want = hasStrip and "ARSettingsLayoutTabbed" or "fs25_settingsLayout"
+    for _, el in ipairs({ self.boxLayout, self.settingsSliderBox }) do
+        if el ~= nil and el.applyProfile ~= nil and el.profile ~= want then
+            pcall(el.applyProfile, el, want, false, true)
+            if el.setSize ~= nil then pcall(el.setSize, el) end
+        end
+    end
+end
+
+---A and D (the menu asks the page, duck-typed) and the tab clicks.
+function AnimalSettingsPage:stepPageTabBy(delta)
+    if AnimalPageTabs == nil then return false end
+    if not AnimalPageTabs.step(self, AnimalPageTabs.tabs("settings"), delta) then return false end
+    self:renderRows()
+    return true
+end
+
+function AnimalSettingsPage:onTabSlot(n)
+    if AnimalPageTabs == nil then return end
+    local tabs = AnimalPageTabs.tabs("settings")
+    if tabs[n] == nil or n == (self.currentTab or 1) then return end
+    self.currentTab = n
+    self:renderRows()
+end
+function AnimalSettingsPage:onTab1() return self:onTabSlot(1) end
+function AnimalSettingsPage:onTab2() return self:onTabSlot(2) end
+function AnimalSettingsPage:onTab3() return self:onTabSlot(3) end
+function AnimalSettingsPage:onTab4() return self:onTabSlot(4) end
 
 function AnimalSettingsPage:onFrameOpen()
     AnimalSettingsPage:superClass().onFrameOpen(self)

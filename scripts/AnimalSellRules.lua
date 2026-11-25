@@ -642,7 +642,13 @@ AnimalSellRules.REASON_ORDER = "order"
 -- is not a rule the player switched on; it is the difference between selling and
 -- burning. It is reported as a note so the refusal is visible rather than silent.
 ---Returns a plan in `AnimalSellRules.plan`'s own shape.
-function AnimalSellRules.orderPlan(p, count, priceFn)
+---`skip` (optional) is a SET of breed names this order may not sell: the breeds an
+-- age order holds in this barn (AnimalSellSchedule.lockedBreeds). `plan.skipped`
+-- counts the animals passed over for it, so the caller can say why a plan is empty.
+---`only` (optional) is the ONE breed name the order sells (2026-10-19: "sell orders
+-- should always apply to the breed only"). nil sells across the barn, which is what
+-- an order saved before breeds were recorded still does.
+function AnimalSellRules.orderPlan(p, count, priceFn, skip, only)
     local a = AnimalSellRules.assess(p)
     local plan = { lines = {}, total = 0, revenue = 0, assess = a, notes = {} }
     count = tonumber(count) or 0
@@ -652,9 +658,15 @@ function AnimalSellRules.orderPlan(p, count, priceFn)
 
     local left = count
     local refused = nil
+    plan.skipped = 0
     for _, c in ipairs(AnimalSellRules.rankClusters(a)) do
         if left <= 0 then break end
         local n = math.min(left, c.count or 0)
+        if only ~= nil and c.name ~= only then n = 0 end
+        if n > 0 and skip ~= nil and skip[c.name] then
+            plan.skipped = plan.skipped + n
+            n = 0
+        end
         if n > 0 then
             local rev, realised = (c.each or 0) * n, false
             if priceFn ~= nil then

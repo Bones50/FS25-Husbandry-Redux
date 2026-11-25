@@ -672,12 +672,18 @@ function AnimalBuySchedule.runOne(s)
     local replaced, rwhy = AnimalBuySchedule.dealerReplaced()
     if replaced then return 0, 0, "stood down: " .. tostring(rwhy) end
 
-    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
-    local p  = (SD ~= nil and SD.placeableByUid ~= nil) and SD.placeableByUid(s.uid) or nil
+    local p  = HusbandryRedux.barnByUid(s.uid)      -- with or without DR (2026-11-25)
     if p == nil then return 0, 0, "barn not found" end
 
     local row, rerr, moved = AnimalBuySchedule.resolveRow(p, s)
     if row == nil then return 0, 0, tostring(rerr) end
+    -- AN AGE ORDER OWNS THIS BREED IN THIS BARN: nothing else may trade it there
+    if AnimalSellSchedule ~= nil and AnimalSellSchedule.buyLock ~= nil then
+        local lock = AnimalSellSchedule.buyLock(s.uid, { subType = s.subType, row = row, title = s.title })
+        if lock ~= nil then
+            return 0, 0, string.format("held by age order #%s", tostring(lock.id))
+        end
+    end
     -- The row was found somewhere other than where it was saved. Worth saying, and
     -- worth RE-ANCHORING to, so the fallback is not paid for on every future run.
     if moved ~= nil then

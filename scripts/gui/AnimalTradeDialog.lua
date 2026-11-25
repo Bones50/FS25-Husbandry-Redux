@@ -335,7 +335,16 @@ function AnimalTradeDialog:refresh()
     end
     setText(self.noteText, note)
 
-    local canCommit = (r ~= nil and (self.amount or 0) >= 1 and q ~= nil and q.net ~= nil)
+    -- AN AGE ORDER OWNS THIS BREED IN THIS BARN (2026-10-19): no buying or selling it by
+    -- hand while the order is active. Said on the note line, and the button is off.
+    local lock = self:ageLock()
+    if lock ~= nil then
+        note = string.format(l10n("ar_td_heldByAge",
+            "Age order #%d sells every %s here at %d months. Pause or remove it to trade this breed by hand."),
+            lock.id or 0, tostring(lock.breed), lock.ageMonths or 0)
+        setText(self.noteText, note)
+    end
+    local canCommit = (r ~= nil and (self.amount or 0) >= 1 and q ~= nil and q.net ~= nil and lock == nil)
     if self.commitButton ~= nil and self.commitButton.setDisabled ~= nil then
         pcall(self.commitButton.setDisabled, self.commitButton, not canCommit)
     end
@@ -535,10 +544,21 @@ end
 -- issues the game's own call and reports what the game said. A call that returns
 -- cleanly but never confirms is treated as a FAILURE (13.4) -- that is the one
 -- outcome which would otherwise be shown as money that never arrived.
+---The active age order holding the selected row's breed in this barn, or nil.
+function AnimalTradeDialog:ageLock()
+    local r = self:row()
+    local b = self:barn()
+    local uid = b ~= nil and b.uid or nil
+    if r == nil or uid == nil or AnimalSellSchedule == nil or AnimalSellSchedule.ageLock == nil then return nil end
+    if self.mode == AnimalTrade.MODE_BUY then return AnimalSellSchedule.buyLock(uid, r) end
+    return AnimalSellSchedule.ageLock(uid, r.name)
+end
+
 function AnimalTradeDialog:onCommit()
     local r = self:row()
     local _, p = self:barn()
     if r == nil or p == nil or (self.amount or 0) < 1 then return true end
+    if self:ageLock() ~= nil then return true end
     local n = self.amount
 
     local ok, msg = AnimalTrade.commit(p, self.mode, r, n)

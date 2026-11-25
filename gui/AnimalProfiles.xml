@@ -269,4 +269,12 @@
         <textFocusedColor value="$preset_fs25_colorMainLight" />
     </Profile>
 
+    <!-- THE SETTINGS LIST WITH A TAB STRIP ABOVE IT (2026-10-20). DR's SDSettingsLayoutTabbed,
+         under AR's name: pinned to the bottom and shrunk 46px, so the space comes off the TOP.
+         with is read on profiles only (DR 5.87a). The 90px width offset restates the base
+         profile's own, because the attribute replaces rather than merges. -->
+    <Profile name="ARSettingsLayoutTabbed" extends="fs25_settingsLayout" with="pivotBottomCenter">
+        <absoluteSizeOffset value="90px 46px" />
+    </Profile>
+
 </GUIProfiles>

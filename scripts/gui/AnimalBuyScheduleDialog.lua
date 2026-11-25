@@ -217,9 +217,33 @@ function AnimalBuyScheduleDialog:num(i)
     return pk:get()
 end
 
-function AnimalBuyScheduleDialog:count() return self:num(AnimalBuyScheduleDialog.SLOT_COUNT) end
-function AnimalBuyScheduleDialog:every() return self:num(AnimalBuyScheduleDialog.SLOT_EVERY) end
-function AnimalBuyScheduleDialog:start() return self:num(AnimalBuyScheduleDialog.SLOT_START) end
+---WHICH SLOT HOLDS WHICH FIELD, per tab. The BUY tab is unchanged. The SELL ORDERS
+-- tab leads with the "Sell by" switch (Schedule / Age, 2026-10-19), so its schedule
+-- fields sit one slot lower, and the AGE order uses only the slot after the switch.
+-- One table, so a field can never be read from a slot that means something else.
+AnimalBuyScheduleDialog.SLOT_SELLBY = 1
+local SLOTS_BUY  = { count = 1, every = 2, runs = 3, forever = 4, start = 5 }
+local SLOTS_SELL = { sellBy = 1, count = 2, every = 3, runs = 4, forever = 5, start = 6 }
+local SLOTS_AGE  = { sellBy = 1, age = 2 }
+function AnimalBuyScheduleDialog:slotMap()
+    if self.mode ~= MODE_SELL_ORDER then return SLOTS_BUY end
+    if self.sellByAge then return SLOTS_AGE end
+    return SLOTS_SELL
+end
+function AnimalBuyScheduleDialog:slotOf(field) return self:slotMap()[field] end
+function AnimalBuyScheduleDialog:numOf(field)
+    local i = self:slotOf(field)
+    if i == nil then return nil end
+    return self:num(i)
+end
+function AnimalBuyScheduleDialog:count() return self:numOf("count") end
+function AnimalBuyScheduleDialog:every() return self:numOf("every") end
+function AnimalBuyScheduleDialog:start() return self:numOf("start") end
+function AnimalBuyScheduleDialog:ageMonths() return self:numOf("age") end
+---The age order is chosen on the SELL ORDERS tab only.
+function AnimalBuyScheduleDialog:isAgeOrder()
+    return self.mode == MODE_SELL_ORDER and self.sellByAge == true
+end
 
 ---HOW LONG THE ORDER RUNS, in the units the RECORD stores.
 --
@@ -238,7 +262,7 @@ function AnimalBuyScheduleDialog:start() return self:num(AnimalBuyScheduleDialog
 -- precisely the meaning it has today.
 function AnimalBuyScheduleDialog:forMonths()
     if self.foreverOn then return AnimalBuySchedule.FOREVER end
-    local runs, every = self:num(AnimalBuyScheduleDialog.SLOT_RUNS), self:every()
+    local runs, every = self:numOf("runs"), self:every()
     if runs == nil or every == nil then return nil end
     return runs * every
 end
@@ -282,6 +306,7 @@ function AnimalBuyScheduleDialog:onOpen()
     -- previous visit that they never re-approved. Forever goes back to off with
     -- them, or a fresh order would silently inherit the last one's open ending.
     self.foreverOn = false
+    self.sellByAge = false
     for i = 1, AnimalBuyScheduleDialog.SLOTS do
         local pk = self:picker(i)
         if pk ~= nil then pk:reset() end
@@ -367,12 +392,42 @@ function AnimalBuyScheduleDialog:slotSpec(i)
     -- BOTH ORDER TABS HAVE THE SAME FIVE SLOTS IN THE SAME PLACES, differing only
     -- in wording -- so one table serves, and a slot cannot mean one thing on the
     -- buy tab and another on the sell tab (which is what `num()` assumes).
+    ---SELL BY: SCHEDULE OR AGE (2026-10-19). Switching EMPTIES the fields, because
+    -- the age field takes the slot the count had and must not inherit its number.
+    local function sellBySlot()
+        return { kind = "toggle",
+                 label = l10n("ar_bs_sellBy", "Sell by:"),
+                 texts = { l10n("ar_bs_sellBySchedule", "Schedule"), l10n("ar_bs_sellByAge", "Age") },
+                 index = self.sellByAge and 2 or 1,
+                 set   = function(st)
+                     local age = (st == 2)
+                     if age ~= (self.sellByAge == true) then
+                         self.sellByAge = age
+                         self.foreverOn = false
+                         for k = 2, AnimalBuyScheduleDialog.SLOTS do
+                             local pk = self.pickers ~= nil and self.pickers[k] or nil
+                             if pk ~= nil then pk:reset() end
+                         end
+                     end
+                 end }
+    end
+    ---THE AGE, in months, that every animal of the selected breed is sold at.
+    local function ageSlot()
+        return { kind = "number", min = 1, max = AnimalSellSchedule.MAX_AGE,
+                 label = l10n("ar_bs_ageAt", "Sell at age (months):") }
+    end
+
+    local map = self:slotMap()
+    local field = nil
+    for k, v in pairs(map) do if v == i then field = k end end
     if self.mode == MODE_BUY or self.mode == MODE_SELL_ORDER then
-        if i == AnimalBuyScheduleDialog.SLOT_COUNT   then return countSlot() end
-        if i == AnimalBuyScheduleDialog.SLOT_EVERY   then return everySlot() end
-        if i == AnimalBuyScheduleDialog.SLOT_RUNS    then return runsSlot() end
-        if i == AnimalBuyScheduleDialog.SLOT_FOREVER then return foreverSlot() end
-        if i == AnimalBuyScheduleDialog.SLOT_START   then return startSlot() end
+        if field == "sellBy"  then return sellBySlot() end
+        if field == "age"     then return ageSlot() end
+        if field == "count"   then return countSlot() end
+        if field == "every"   then return everySlot() end
+        if field == "runs"    then return runsSlot() end
+        if field == "forever" then return foreverSlot() end
+        if field == "start"   then return startSlot() end
         return nil
     end
 
@@ -608,6 +663,14 @@ function AnimalBuyScheduleDialog:filterToBreed()
             if r.name == breed then keep[#keep + 1] = r end
         end
         self.rowsA = keep
+        -- every sell order is for ONE breed now, so the breed's own orders are the
+        -- ones to show. An order saved before breeds were recorded (no breed) acts on
+        -- the whole barn, this breed included, so it stays visible.
+        local orders = {}
+        for _, s in ipairs(self.rowsB) do
+            if s.breed == nil or s.breed == breed then orders[#orders + 1] = s end
+        end
+        self.rowsB = orders
     end
 end
 
@@ -636,8 +699,22 @@ function AnimalBuyScheduleDialog:rowB() return self.rowsB[self.bIndex] end
 function AnimalBuyScheduleDialog:draftSellOrder()
     local b, _, uid = self:barn()
     if uid == nil then return nil end
+    if self:isAgeOrder() then
+        -- ONE BREED: the row picked in the upper list
+        local r = self:rowA()
+        if r == nil or r.name == nil then return nil end
+        return AnimalSellSchedule.validate({
+            kind = AnimalSellSchedule.KIND_AGE, uid = uid,
+            barnName = b ~= nil and b.name or "?",
+            breed = r.name, ageMonths = self:ageMonths(),
+        })
+    end
+    -- A SCHEDULE ORDER SELLS ONE BREED TOO: the row picked in the upper list
+    local br = self:rowA()
+    if br == nil or br.name == nil then return nil end
     return AnimalSellSchedule.validate({
         uid = uid, barnName = b ~= nil and b.name or "?",
+        breed = br.name,
         -- NIL UNTIL A NUMBER IS TYPED, and `validate` refuses it -- which is what
         -- disables Add and puts the money block on dashes, with no separate
         -- "has the player chosen yet" flag to keep in step.
@@ -829,7 +906,7 @@ end
 function AnimalBuyScheduleDialog:applyMoney()
     if self.mode == MODE_BUY then
         local row  = self:rowA()
-        local runs = self:num(AnimalBuyScheduleDialog.SLOT_RUNS)
+        local runs = self:numOf("runs")
         if self.foreverOn then runs = math.huge end
         -- WRITTEN AS if/else, NOT `a and b or c`. This file has already been bitten
         -- by that collapse once (24.11, on a boolean); here the guard is that
@@ -854,6 +931,27 @@ function AnimalBuyScheduleDialog:applyMoney()
         -- most misleading figure on the dialog.
         setText(self.valTotal,
                 (each ~= nil and runs ~= nil and not open) and money(each * runs) or "-")
+        return
+    end
+    if self:isAgeOrder() then
+        -- WHAT IT WOULD SELL THE MOMENT IT IS ADDED, and that it never ends
+        local _, p = self:barn()
+        local s = self:draftSellOrder()
+        local plan = nil
+        if p ~= nil and s ~= nil then
+            local priceFn = nil
+            if AnimalSellExecutor ~= nil and AnimalSellExecutor.priceFn ~= nil then
+                local okF, fn = pcall(AnimalSellExecutor.priceFn, p)
+                if okF then priceFn = fn end
+            end
+            plan = AnimalSellSchedule.agePlan(p, s, priceFn)
+        end
+        setText(self.lblRuns,  l10n("ar_bs_lblOfAge", "Of age now"))
+        setText(self.valRuns,  plan ~= nil and tostring(plan.total or 0) or "-")
+        setText(self.lblEach,  l10n("ar_bs_lblSellsNow", "Sells now for"))
+        setText(self.valEach,  plan ~= nil and money(plan.revenue or 0) or "-")
+        setText(self.lblTotal, l10n("ar_bs_lblRuns", "Runs"))
+        setText(self.valTotal, l10n("ar_bs_untilRemoved", "until removed"))
         return
     end
     if self.mode == MODE_SELL_ORDER then
@@ -935,12 +1033,32 @@ function AnimalBuyScheduleDialog:applyButtons()
     -- explicitly; SELL_ORDER gets it for free because `draftSellOrder` runs the
     -- schedule's own validate, which refuses a nil count. Two routes to one rule,
     -- and the sell one is the schedule's rule rather than a copy of it.
-    local addOk  = can and ((self.mode == MODE_BUY and self:rowA() ~= nil and self:orderReady())
-                            or (self.mode == MODE_SELL_ORDER and self:draftSellOrder() ~= nil))
+    local addOk  = can and ((self.mode == MODE_BUY and self:rowA() ~= nil and self:orderReady()
+                             and self:lockFor() == nil)
+                            or (self.mode == MODE_SELL_ORDER and self:draftSellOrder() ~= nil
+                                and self:lockFor() == nil))
     for el, on in pairs({ [self.addButton] = addOk, [self.removeButton] = target ~= nil,
                           [self.pauseButton] = target ~= nil }) do
         if el ~= nil and el.setDisabled ~= nil then pcall(el.setDisabled, el, not on) end
     end
+end
+
+---THE AGE ORDER THAT OWNS THE SELECTED BREED IN THIS BARN, if any (2026-10-19).
+-- BUY: a dealer row of a breed an active age order holds may not be ordered.
+-- AGE: a second age order on a breed that already has one may not be added.
+-- SCHEDULE: not on a breed an active age order holds (reported 2026-10-19: a schedule
+-- order could still be created "over the top" of an age order). Pick another breed
+-- in the barn and Add works; the order still leaves held breeds alone when it runs
+-- (AnimalSellSchedule.buildPlan).
+function AnimalBuyScheduleDialog:lockFor()
+    local _, _, uid = self:barn()
+    if uid == nil or AnimalSellSchedule == nil then return nil end
+    local r = self:rowA()
+    if r == nil then return nil end
+    if self.mode == MODE_BUY then return AnimalSellSchedule.buyLock(uid, r) end
+    if self:isAgeOrder() then return AnimalSellSchedule.ageOrderFor(uid, r.name) end
+    if self.mode == MODE_SELL_ORDER then return AnimalSellSchedule.ageLock(uid, r.name) end
+    return nil
 end
 
 ---Whether anything can be committed here at all, and why not.
@@ -987,6 +1105,22 @@ function AnimalBuyScheduleDialog:noteBase()
     local _, why = self:canAct()
     if why ~= nil then return why end
     if self.breedNote ~= nil then return self.breedNote end
+
+    local lock = self:lockFor()
+    if lock ~= nil then
+        return string.format(l10n("ar_bs_heldByAge",
+            "Age order #%d sells every %s in this barn at %d months. Pause or remove it to trade this breed another way."),
+            lock.id or 0, tostring(lock.breed), lock.ageMonths or 0)
+    end
+    if self:isAgeOrder() then
+        local r = self:rowA()
+        if r == nil then
+            return l10n("ar_bs_agePickBreed", "Pick the breed to sell by age in the list above.")
+        end
+        return string.format(l10n("ar_bs_ageExplain",
+            "Sells every %s in this barn the hour it reaches the age, until you remove the order. While it is active, %s cannot be bought or sold any other way in this barn."),
+            tostring(r.name), tostring(r.name))
+    end
 
     if self.mode == MODE_BUY then
         if #self.rowsA == 0 then
@@ -1094,13 +1228,21 @@ function AnimalBuyScheduleDialog:populateCellForItemInSection(list, section, ind
             -- the order's TITLE already carries the paused marker, so both lists
             -- get it from one place
             set("sWhat", AnimalBuyScheduleDialog.orderTitle(s, l10n), off)
-            set("sProgress", progressText(s.runsDone, AnimalSellSchedule.totalRuns(s), l10n), off)
+            if AnimalSellSchedule.isAge(s) then
+                set("sProgress", string.format(l10n("ar_bs_soldN", "%d sold"), s.sold or 0), off)
+            else
+                set("sProgress", progressText(s.runsDone, AnimalSellSchedule.totalRuns(s), l10n), off)
+            end
             -- WHEN IT NEXT SELLS, in months -- the same countdown the buy orders show
             -- ("in 3 months", "starts in 2 months", "due now", or why the last run
             -- sold nothing)
             set("sNext", self:nextText(s), off)
         end
-        set("sEvery", months(s.everyMonths), off)
+        if AnimalSellSchedule ~= nil and AnimalSellSchedule.isAge(s) then
+            set("sEvery", string.format(l10n("ar_bs_atAge", "at %d mo"), s.ageMonths or 0), off)
+        else
+            set("sEvery", months(s.everyMonths), off)
+        end
         return
     end
 
@@ -1177,7 +1319,13 @@ end
 -- barn holding two.
 function AnimalBuyScheduleDialog.orderTitle(s, l10n)
     local t
-    if s.animalName ~= nil and s.animalName ~= "" then
+    if AnimalSellSchedule ~= nil and AnimalSellSchedule.isAge(s) then
+        t = string.format(l10n("ar_bs_orderTitleAge", "#%d  Sell %s at %d months"),
+                          s.id or 0, tostring(s.breed), s.ageMonths or 0)
+    elseif s.breed ~= nil then
+        t = string.format(l10n("ar_bs_orderTitle", "#%d  Sell %d %s"),
+                          s.id or 0, s.count or 0, tostring(s.breed))
+    elseif s.animalName ~= nil and s.animalName ~= "" then
         t = string.format(l10n("ar_bs_orderTitle", "#%d  Sell %d %s"),
                           s.id or 0, s.count or 0, s.animalName)
     else
@@ -1202,6 +1350,10 @@ function AnimalBuyScheduleDialog:nextText(s)
     local month = AnimalBuySchedule.currentMonth()
     -- THE LAST FAILURE OUTRANKS THE COUNTDOWN: a barn that was full at 08:00 is
     -- the one thing the player needs told.
+    -- AN AGE ORDER HAS NO COUNTDOWN: it is watching, or it just sold
+    if self.mode ~= MODE_BUY and AnimalSellSchedule.isAge(s) then
+        return l10n("ar_bs_watching", "watching")
+    end
     if s.note ~= nil and s.note ~= "" then return tostring(s.note) end
     if month == nil then return "-" end
     local d = s.nextMonth - month
@@ -1465,6 +1617,31 @@ function AnimalBuyScheduleDialog:onAdd()
     local can, why = self:canAct()
     if not can then self.notice = why; self:refresh(); return end
 
+    local lock = self:lockFor()
+    if lock ~= nil then
+        self.notice = self:noteBase()
+        self:refresh()
+        return
+    end
+    if self:isAgeOrder() then
+        local d = self:draftSellOrder()
+        if d == nil then return end
+        local _, tn = AnimalHerdData.animalTypeOf(select(2, self:barn()))
+        local rec, err = AnimalSellSchedule.add({
+            kind = AnimalSellSchedule.KIND_AGE, uid = uid, barnName = b.name, animalName = tn,
+            breed = d.breed, ageMonths = d.ageMonths,
+        })
+        if rec == nil then
+            self.notice = string.format(l10n("ar_bs_refused", "Refused: %s"), tostring(err))
+        else
+            self.notice = string.format(l10n("ar_bs_addedAge", "Added: sell every %s at %d months, until removed."),
+                                        tostring(rec.breed), rec.ageMonths)
+            self.bIndex = #AnimalSellSchedule.forBarn(uid)
+        end
+        self:rebuild()
+        return
+    end
+
     if self.mode == MODE_BUY then
         local c = self:rowA()
         if c == nil then return end
@@ -1488,15 +1665,15 @@ function AnimalBuyScheduleDialog:onAdd()
         if d == nil then return end
         local _, tn = AnimalHerdData.animalTypeOf(select(2, self:barn()))
         local rec, err = AnimalSellSchedule.add({
-            uid = uid, barnName = b.name, animalName = tn,
+            uid = uid, barnName = b.name, animalName = tn, breed = d.breed,
             count = d.count, everyMonths = d.everyMonths, forMonths = d.forMonths,
             startIn = d.startIn,
         })
         if rec == nil then
             self.notice = string.format(l10n("ar_bs_refused", "Refused: %s"), tostring(err))
         else
-            self.notice = string.format(l10n("ar_bs_addedSell", "Added: sell %d, %s. Set its rules on the SELL RULES tab."),
-                                        rec.count, months(rec.everyMonths))
+            self.notice = string.format(l10n("ar_bs_addedSellBreed", "Added: sell %d %s every %s."),
+                                        rec.count, tostring(rec.breed), months(rec.everyMonths))
             self.bIndex = #AnimalSellSchedule.forBarn(uid)
         end
     end
@@ -1516,6 +1693,10 @@ function AnimalBuyScheduleDialog:onRemove()
         AnimalBuySchedule.remove(s.id)
         self.notice = string.format(l10n("ar_bs_removed", "Removed: %d x %s"),
                                     s.count, tostring(s.title))
+    elseif AnimalSellSchedule.isAge(s) then
+        AnimalSellSchedule.remove(s.id)
+        self.notice = string.format(l10n("ar_bs_removedAge", "Removed: sell %s at %d months"),
+                                    tostring(s.breed), s.ageMonths or 0)
     else
         AnimalSellSchedule.remove(s.id)
         self.notice = string.format(l10n("ar_bs_removedSell", "Removed: sell %d"), s.count)

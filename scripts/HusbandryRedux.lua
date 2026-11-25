@@ -34,7 +34,7 @@ HusbandryRedux = {}
 
 HusbandryRedux.MOD_NAME = g_currentModName or "FS25_Husbandry_Redux"
 HusbandryRedux.MOD_DIR  = g_currentModDirectory or ""
-HusbandryRedux.VERSION  = "0.0.0.3"
+HusbandryRedux.VERSION  = "0.0.0.4"
 
 ---THE DEV CONSOLE IS OFF FOR RELEASE (2026-09-29, DR 6.13c's rule). Every `ar*` console command --
 -- the probes, arTradeDump, arFeedPlan and the arBuy* schedule commands, some of which sell or buy

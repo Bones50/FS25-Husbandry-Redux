@@ -21,6 +21,7 @@
 
     <Paging profile="uiInGameMenuPaging" onPageChange="onPageChange" onPageUpdate="onPageUpdate" id="pagingElement">
         <FrameReference ref="animalHerdInspectorPage" name="animalHerdInspectorPage" id="pageHerd"/>
+        <FrameReference ref="animalOverviewPage" name="animalOverviewPage" id="pageOverview"/>
         <FrameReference ref="animalSettingsPage" name="animalSettingsPage" id="pageSettings"/>
         <FrameReference ref="animalHelpPage" name="animalHelpPage" id="pageHelp"/>
     </Paging>
