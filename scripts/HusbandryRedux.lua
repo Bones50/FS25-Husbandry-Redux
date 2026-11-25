@@ -166,6 +166,37 @@ function HusbandryRedux.resolveDistributionRedux()
     return nil, "not found"
 end
 
+---A BARN'S ID, the same with or without Distribution Redux (2026-11-25). With DR it is DR's
+-- assetUid (which carries DR's client-side id map); without DR it is the placeable's own
+-- uniqueId -- which is what DR's answers on the server anyway, so a save keeps its keys when DR
+-- comes or goes. The old fallback, tostring(p), was a memory ADDRESS: new every load, so per-barn
+-- settings never matched again and the Auto Trader could never find its barn.
+function HusbandryRedux.barnUid(p)
+    if p == nil then return nil end
+    local SD = HusbandryRedux.DR
+    if SD ~= nil and SD.assetUid ~= nil then
+        local ok, uid = pcall(SD.assetUid, p)
+        if ok and uid ~= nil then return uid end
+    end
+    if type(p.uniqueId) == "string" and p.uniqueId ~= "" then return p.uniqueId end
+    return nil
+end
+
+---The barn with that id, or nil: DR's lookup when DR is there, else a scan of the placeables.
+function HusbandryRedux.barnByUid(uid)
+    if uid == nil then return nil end
+    local SD = HusbandryRedux.DR
+    if SD ~= nil and SD.placeableByUid ~= nil then
+        local ok, p = pcall(SD.placeableByUid, uid)
+        if ok and p ~= nil then return p end
+    end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    for _, p in ipairs(ps ~= nil and ps.placeables or {}) do
+        if p.uniqueId == uid then return p end
+    end
+    return nil
+end
+
 ---Report DR's API version, and whether it reaches DR_MIN_API. A DR that publishes
 -- no VERSION at all reads as 0 and the caller decides -- this never refuses to run.
 -- The boolean is for MESSAGES only; behaviour is gated on capabilities (see
@@ -205,8 +236,7 @@ function HusbandryRedux.feedPlanner(placeable, allowedFillTypes, poolNeed)
     -- THE PER-BARN SWITCH (Pigs tab, 2026-09-14): a barn the player switched off goes
     -- back to DR's own feed rules by the same decline.
     if AnimalFeedPolicy ~= nil and AnimalFeedPolicy.enabled ~= nil then
-        local SD = HusbandryRedux.DR
-        local uid = (SD ~= nil and SD.assetUid ~= nil) and SD.assetUid(placeable) or nil
+        local uid = HusbandryRedux.barnUid(placeable)
         if uid ~= nil and not AnimalFeedPolicy.enabled(uid) then return nil end
     end
     local spec = placeable.spec_husbandryFood
@@ -249,7 +279,7 @@ function HusbandryRedux.stockFnFor(placeable)
     local stamp = env ~= nil and ((env.currentDay or 0) * 24 + (env.currentHour or 0)) or nil
     local C = HusbandryRedux._stock
     if stamp == nil or C.stamp ~= stamp then C.stamp, C.byUid = stamp, {} end
-    local uid = (SD.assetUid ~= nil) and SD.assetUid(placeable) or tostring(placeable)
+    local uid = HusbandryRedux.barnUid(placeable) or tostring(placeable)   -- a per-hour cache key only
     local mine = C.byUid[uid]
     if mine == nil then mine = {}; C.byUid[uid] = mine end
     local fs = placeable.spec_husbandryFood
@@ -1280,9 +1310,7 @@ function HusbandryRedux.husbandryPanel(placeable)
                 out.herd.advice = HusbandryRedux.nextBirthsAdvice(a)
                 -- a sell order due before those births, on the line below
                 if out.herd.advice ~= nil and out.herd.advice.tone == "warn" then
-                    local SDu = HusbandryRedux.DR
-                    local barnUid = (SDu ~= nil and SDu.assetUid ~= nil) and SDu.assetUid(placeable)
-                                    or tostring(placeable)
+                    local barnUid = HusbandryRedux.barnUid(placeable)
                     local okN, note, inLine = pcall(HusbandryRedux.saleBeforeBirthsNote, a, barnUid, placeable)
                     if okN and note ~= nil then
                         -- an order that follows the guidance is handling the loss: green
@@ -1352,9 +1380,7 @@ function HusbandryRedux.husbandryPanel(placeable)
                     -- here -- it would read as a nil global and fall silently back
                     -- to an ADDRESS, which can never match the stored policy key
                     -- (the 5.44 shape, and luac cannot see it).
-                    local DR = HusbandryRedux.DR
-                    local uid = (DR ~= nil and DR.assetUid ~= nil)
-                                and DR.assetUid(placeable) or tostring(placeable)
+                    local uid = HusbandryRedux.barnUid(placeable)
 
                     -- THE BARN'S MEASURED FEED BILL, so "am I already on the best
                     -- ration" is judged against what the trough ACTUALLY costs --

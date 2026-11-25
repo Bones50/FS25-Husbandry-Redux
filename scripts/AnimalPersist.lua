@@ -56,7 +56,13 @@ AnimalPersist.FILE    = "husbandryRedux.xml"
 -- So the old name is still READ when the new one is absent, and the next SAVE writes the
 -- new one. One-way and self-completing: after a single save-and-reload the old file is
 -- simply ignored, and it is never written to again.
-AnimalPersist.FILE_LEGACY = "husbandryRedux.xml"
+--
+-- BUILT FROM PIECES (2026-11-25): the rename pass rewrote this very literal to the NEW name,
+-- so the fallback read the current file twice and every pre-rename save started empty. The
+-- old ROOT element went the same way. Assembled from pieces so no search-and-replace can
+-- touch them again (the same guard as HusbandryRedux.lua's legacy-mod warning).
+AnimalPersist.FILE_LEGACY = "animal" .. "Redux.xml"
+AnimalPersist.ROOT_LEGACY = "animal" .. "Redux"
 
 ---The file to READ from `dir`, preferring the current name and falling back to the old
 -- one. Returns the path and whether it was the legacy file, or nil if neither is there.
@@ -151,18 +157,31 @@ local function openForWrite(path)
     return createXMLFile("HusbandryRedux", path, AnimalPersist.ROOT)
 end
 
+---The root element a file was written under: the current one, or the pre-rename one when
+-- the file carries only that (an Animal Redux save read through FILE_LEGACY).
+function AnimalPersist.rootOf(xml)
+    local root = AnimalPersist.ROOT
+    if xml == nil or hasXMLProperty == nil then return root end
+    local ok, has = pcall(hasXMLProperty, xml, root)
+    if ok and has then return root end
+    local okL, hasL = pcall(hasXMLProperty, xml, AnimalPersist.ROOT_LEGACY)
+    if okL and hasL then return AnimalPersist.ROOT_LEGACY end
+    return root
+end
+
 ---Hand every registered section its subtree. `xml` may be nil, and that is not
 -- an error path: it is trap 4's clearing pass.
 function AnimalPersist._readAll(xml)
     AnimalPersist._version = AnimalPersist.VERSION
+    local root = AnimalPersist.rootOf(xml)
     if xml ~= nil then
-        local v = getXMLInt(xml, AnimalPersist.ROOT .. "#version")
+        local v = getXMLInt(xml, root .. "#version")
         if v ~= nil then AnimalPersist._version = v end
     end
     for _, name in ipairs(AnimalPersist._order) do
         local s = AnimalPersist._sections[name]
         if s ~= nil then
-            local ok, err = pcall(s.load, xml, AnimalPersist.ROOT .. "." .. name)
+            local ok, err = pcall(s.load, xml, root .. "." .. name)
             if not ok then hard("section '%s' failed to load: %s", name, tostring(err)) end
         end
     end
@@ -284,7 +303,7 @@ function AnimalPersist.load()
     end
     local path, legacy = AnimalPersist.resolveReadPath(dir)
     if legacy then
-        say("LOAD: reading the pre-rename %s; the next save writes %s",
+        hard("LOAD: reading the pre-rename %s; the next save writes %s",
             AnimalPersist.FILE_LEGACY, AnimalPersist.FILE)
     end
     if path == nil then

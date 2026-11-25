@@ -180,8 +180,7 @@ function AnimalHerdData.readBarn(p)
         end
     end
 
-    local SD = HusbandryRedux ~= nil and HusbandryRedux.DR or nil
-    local uid = (SD ~= nil and SD.assetUid ~= nil) and SD.assetUid(p) or tostring(p)
+    local uid = HusbandryRedux ~= nil and HusbandryRedux.barnUid ~= nil and HusbandryRedux.barnUid(p) or tostring(p)
 
     -- A MEADOW IS A FOOD SOURCE THE TROUGH DOES NOT SHOW. PlaceableHusbandryMeadow
     -- overrides getAvailableFood / removeFood / getFoodInfos, so grazed grass
